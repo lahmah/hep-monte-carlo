@@ -1,0 +1,31 @@
+[
+  {
+    "name": "vary-dim",
+    "target": "densities.Camel",
+    "target_args": "{}",
+    "sampler": "plain_uniform",
+    "size": 1000,
+    "params": {
+      "initial": ".4"
+    },
+    "repeats": 4,
+    "save_all": "True",
+    "params_vary": {
+      "ndim": "np.arange(1, 5)"
+    }
+  },
+  {
+    "name": "vary-init",
+    "target": "densities.Camel",
+    "target_args": "{'a': 0.1}",
+    "sampler": "plain_uniform",
+    "size": 10000,
+    "params": {
+      "ndim": "2"
+    },
+    "params_vary": {
+      "initial": "np.linspace(0.01, .99, 10)"
+    },
+    "binning": "([20, 20], ([0, 0], [1, 1]))"
+  }
+]

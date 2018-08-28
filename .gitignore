@@ -104,8 +104,19 @@ venv.bak/
 .mypy_cache/
 
 # virtualenv
-mcmcmc_env
+hepmc_env
 
 *.swp
 
 mcmcmc.kdev4
+
+# generated in examples
+/examples/*.pdf
+/samples/*/out
+
+# pycharm
+/.idea/
+
+# sherpa
+/Process/
+Sherpa_References.tex
