@@ -106,17 +106,19 @@ venv.bak/
 # virtualenv
 hepmc_env
 
+# vim swap files
 *.swp
 
-mcmcmc.kdev4
-
-# generated in examples
-/examples/*.pdf
+# sample files
 /samples/*/out
 
 # pycharm
 /.idea/
 
 # sherpa
-/Process/
 Sherpa_References.tex
+notebooks/Process
+notebooks/Results*
+
+# ignore images
+*.pdf
