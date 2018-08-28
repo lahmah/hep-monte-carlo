@@ -3,7 +3,6 @@
   EVENTS 2000;
   ACUT:=cos(0.3);
   PTCUT:=5.;
-  ME_SIGNAL_GENERATOR=Amegic
   SHERPA_LDADD SherpaMain;
 
   % model parameters
