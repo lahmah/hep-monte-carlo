@@ -92,7 +92,7 @@ def hypercube_bounded(index, null_value=0, shape=lambda xs: xs.shape[0],
 
             in_bounds = np.all((0 < xs) * (xs < 1), axis=1)
 
-            res = np.empty(shape(xs))
+            res = np.empty(xs.shape[0])
             res[in_bounds] = fn(*args[:index], xs[in_bounds],
                                 *args[index+1:], **kwargs)
             res[np.logical_not(in_bounds)] = null_value
