@@ -38,7 +38,7 @@ class Sarge(Distribution):
     def proposal_pdf(self, state, candidate):
         out_state = candidate.reshape(self.nout, 4)
         pout = [Vec4D(momentum) for momentum in out_state]
-        return 1 / self.sarge.generate_weight(self.pin, pout, self.s0)
+        return self.sarge.generate_weight(self.pin, pout, self.s0)
 
     def pdf(self, xs):
         return np.array([self.proposal_pdf(None, x) for x in xs])
@@ -64,13 +64,13 @@ class SingleSarge(object):
         s = sump * sump
         xi_min = s / s0 - ((self.nout + 1.) * (self.nout - 2.)) / 2.
 
-        weight = 2. * np.pi ** (self.nout - 1) * np.log(xi_min) ** (
-            self.n_xi) * (self.n_xi + 1) / (s * s)
+        weight = s * s / (2. * np.pi ** (self.nout - 1) * np.log(xi_min) ** (
+            self.n_xi) * (self.n_xi + 1))
 
         for j in range(self.nout - 1):
-            weight *= pout[j] * pout[j + 1]
+            weight /= pout[j] * pout[j + 1]
 
-        weight *= pout[self.nout - 1] * pout[0]
+        weight /= pout[self.nout - 1] * pout[0]
         return weight
 
     def generate_point(self, pin, s0):
