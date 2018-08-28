@@ -6,10 +6,10 @@ from .rambo import Rambo, RamboOnDiet
 from .sarge import Sarge
 
 try:
-    from .qcd import ee_qq, ee_qq_1g, ee_qq_2g
+    from .qcd import ee_qq_ng
 except ModuleNotFoundError:
     print("Can't find Sherpa installation, skipping ee_qq.")
     ee_qq = None
 
 __all__ = ['Gaussian', 'Camel', 'UnconstrainedCamel', 'Uniform', 'Banana',
-           'Rambo', 'RamboOnDiet', 'Sarge', 'ee_qq', 'ee_qq_1g', 'ee_qq_2g']
+           'Rambo', 'RamboOnDiet', 'Sarge', 'ee_qq_ng']

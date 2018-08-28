@@ -39,15 +39,28 @@ class ImportanceMC(object):
         :param eval_count: Total number of function evaluations.
         :return: Tuple (integral_estimate, error_estimate).
         """
-        xs = self.dist.rvs(eval_count)
-        ys = fn(*xs.transpose())
-        weights = self.dist.pdf(xs)
+        xs = np.empty((eval_count, self.ndim))
+        ys = np.empty(eval_count)
+
+        trials = 0
+        for i in range(eval_count):
+            y = 0.
+            while y == 0.:
+                trials += 1
+                x = self.dist.rvs(1)
+                y = fn(x)
+            
+            xs[i] = x
+            ys[i] = y
+
+        importance_pdf = self.dist.pdf(xs)
+        weights = ys/importance_pdf
         sample = IntegrationSample(data=xs, function_values=ys, weights=weights)
 
         # integral estimate
-        sample.integral = np.mean(ys / weights)
+        sample.integral = eval_count/trials * np.mean(weights)
         # variance of the weighted function samples
-        sample.integral_err = np.sqrt(np.var(ys / weights) / eval_count)
+        sample.integral_err = np.sqrt(np.var(weights) * eval_count/trials**2)
         return sample
 
 
