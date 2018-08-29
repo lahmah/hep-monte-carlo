@@ -1,5 +1,6 @@
 import numpy as np
 from .integration import IntegrationSample
+from ..util import online_variance
 
 
 class ImportanceMC(object):
@@ -41,26 +42,42 @@ class ImportanceMC(object):
         """
         xs = np.empty((eval_count, self.ndim))
         ys = np.empty(eval_count)
+        weights = np.empty(eval_count)
 
         trials = 0
+        accepted = 0
+        var = online_variance()
+        skip = 1
         for i in range(eval_count):
             y = 0.
             while y == 0.:
                 trials += 1
                 x = self.dist.rvs(1)
                 y = fn(x)
-            
+            accepted += 1
             xs[i] = x
             ys[i] = y
+            weights[i] = y/self.dist.pdf(x)
+            var.add_variable(weights[i])
 
-        importance_pdf = self.dist.pdf(xs)
-        weights = ys/importance_pdf
+            n = i+1
+            if n % skip == 0:
+                if n == 1:
+                    print("Event 1\t(avg. trials per event: %f)" % trials)
+                else:
+                    integral = accepted/trials * var.get_mean()
+                    stderr = np.sqrt(var.get_variance() * accepted/trials**2)
+                    percentage = stderr/integral*100
+                    print("Event %i\t(avg. trials per event: %f)\tXS = %f pb +- ( %f pb = %f %%)" % (n, trials/accepted, integral, stderr, percentage))
+                if is_power_of_ten(n):
+                    skip *= 10
+
         sample = IntegrationSample(data=xs, function_values=ys, weights=weights)
 
         # integral estimate
-        sample.integral = eval_count/trials * np.mean(weights)
+        sample.integral = integral
         # variance of the weighted function samples
-        sample.integral_err = np.sqrt(np.var(weights) * eval_count/trials**2)
+        sample.integral_err = stderr
         return sample
 
 
@@ -241,3 +258,10 @@ class MultiChannelMC(object):
             sample.integral_err = np.sqrt(var)
 
         return sample
+
+def is_power_of_ten(x):
+    if x < 10:
+        return False
+    while (x > 9 and x % 10 == 0):
+        x /= 10;
+    return x == 1
