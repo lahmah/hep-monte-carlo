@@ -1,6 +1,6 @@
 import numpy as np
 from .integration import IntegrationSample
-from ..util import online_variance
+from ..util import online_variance, is_power_of_ten
 
 
 class ImportanceMC(object):
@@ -258,10 +258,3 @@ class MultiChannelMC(object):
             sample.integral_err = np.sqrt(var)
 
         return sample
-
-def is_power_of_ten(x):
-    if x < 10:
-        return False
-    while (x > 9 and x % 10 == 0):
-        x /= 10;
-    return x == 1

@@ -1,6 +1,7 @@
 import numpy as np
+from collections import deque
 from ..sampling import Sample
-
+from ..util import is_power_of_ten
 
 class MarkovSample(Sample):
 
@@ -41,7 +42,7 @@ class MarkovUpdate(object):
         """
         raise NotImplementedError("AbstractMarkovUpdate is abstract.")
 
-    def sample(self, sample_size, initial, out_mask=None, log_every=5000):
+    def sample(self, sample_size, initial, out_mask=None, n_batches=20):
         """ Generate a sample of given size.
 
         :param sample_size: Number of samples to generate.
@@ -49,8 +50,6 @@ class MarkovUpdate(object):
             converted to numpy array.
         :param out_mask: Slice object, return only this slice of the output
             chain (useful if sampler uses artificial variables).
-        :param log_every: Print the number of generated samples. Do not log if
-            value is < 0. Log every sample for log=1.
         :return: Numpy array with shape (sample_size, self.ndim).
         """
         # initialize sampling
@@ -58,6 +57,8 @@ class MarkovUpdate(object):
         if len(state) != self.ndim:
             raise ValueError('initial must have dimension ' + str(self.ndim))
         self.init_adapt(state)  # initial adaptation
+
+        batch_length = int(sample_size/n_batches)
 
         sample = MarkovSample()
 
@@ -67,10 +68,21 @@ class MarkovUpdate(object):
         chain = np.empty((sample_size, self.ndim))
         chain[0] = state
 
+        batch_accept = deque(maxlen=batch_length)
+        current_seq = 1 # current sequence length
+        max_seq = 1 # maximal sequence length
+        skip = 1
         for i in range(1, sample_size):
             state = self.next_state(state, i)
             if not np.array_equal(state, chain[i - 1]):
+                batch_accept.append(1)
+                if current_seq > max_seq:
+                    max_seq = current_seq
+                current_seq = 1
                 sample.accepted += 1
+            else:
+                batch_accept.append(0)
+                current_seq += 1
 
             chain[i] = state
             try:
@@ -83,8 +95,17 @@ class MarkovUpdate(object):
             except AttributeError:
                 pass
 
-            if log_every > 0 and (i + 1) % log_every == 0:
-                print("Generated %d samples." % (i + 1), flush=True)
+            if i % skip == 0:
+                if i >= batch_length:
+                    accept_rate = sum(batch_accept)/batch_length
+                else:
+                    accept_rate = sum(batch_accept)/i
+                if i == 1:
+                    print("Event 1\t(batch acceptance rate: %f)" % (accept_rate))
+                else:
+                    print("Event %i\t(batch acceptance rate: %f)\tmax sequence length: %i" % (i, accept_rate, max(current_seq, max_seq)))
+                if is_power_of_ten(i):
+                    skip *= 10
 
         if out_mask is not None:
             chain = chain[:, out_mask]

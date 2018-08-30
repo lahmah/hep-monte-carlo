@@ -120,3 +120,10 @@ class Counted(object):
 def count_calls(obj, *method_names):
     for name in method_names:
         setattr(obj, name, Counted(getattr(obj, name)))
+
+def is_power_of_ten(x):
+    if x < 10:
+        return False
+    while (x > 9 and x % 10 == 0):
+        x /= 10;
+    return x == 1
