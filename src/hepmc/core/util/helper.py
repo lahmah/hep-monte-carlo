@@ -92,7 +92,7 @@ def hypercube_bounded(index, null_value=0, shape=lambda xs: xs.shape[0],
 
             in_bounds = np.all((0 < xs) * (xs < 1), axis=1)
 
-            res = np.empty(shape(xs))
+            res = np.empty(xs.shape[0])
             res[in_bounds] = fn(*args[:index], xs[in_bounds],
                                 *args[index+1:], **kwargs)
             res[np.logical_not(in_bounds)] = null_value
@@ -120,3 +120,10 @@ class Counted(object):
 def count_calls(obj, *method_names):
     for name in method_names:
         setattr(obj, name, Counted(getattr(obj, name)))
+
+def is_power_of_ten(x):
+    if x < 10:
+        return False
+    while (x > 9 and x % 10 == 0):
+        x /= 10;
+    return x == 1

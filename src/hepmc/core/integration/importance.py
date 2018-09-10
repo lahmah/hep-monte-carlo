@@ -1,5 +1,6 @@
 import numpy as np
 from .integration import IntegrationSample
+from ..util import online_variance, is_power_of_ten
 
 
 class ImportanceMC(object):
@@ -39,15 +40,44 @@ class ImportanceMC(object):
         :param eval_count: Total number of function evaluations.
         :return: Tuple (integral_estimate, error_estimate).
         """
-        xs = self.dist.rvs(eval_count)
-        ys = fn(*xs.transpose())
-        weights = self.dist.pdf(xs)
+        xs = np.empty((eval_count, self.ndim))
+        ys = np.empty(eval_count)
+        weights = np.empty(eval_count)
+
+        trials = 0
+        accepted = 0
+        var = online_variance()
+        skip = 1
+        for i in range(eval_count):
+            y = 0.
+            while y == 0.:
+                trials += 1
+                x = self.dist.rvs(1)
+                y = fn(x)
+            accepted += 1
+            xs[i] = x
+            ys[i] = y
+            weights[i] = y/self.dist.pdf(x)
+            var.add_variable(weights[i])
+
+            n = i+1
+            if n % skip == 0:
+                if n == 1:
+                    print("Event 1\t(avg. trials per event: %f)" % trials)
+                else:
+                    integral = accepted/trials * var.get_mean()
+                    stderr = np.sqrt(var.get_variance() * accepted/trials**2)
+                    percentage = stderr/integral*100
+                    print("Event %i\t(avg. trials per event: %f)\tXS = %f pb +- ( %f pb = %f %%)" % (n, trials/accepted, integral, stderr, percentage))
+                if is_power_of_ten(n):
+                    skip *= 10
+
         sample = IntegrationSample(data=xs, function_values=ys, weights=weights)
 
         # integral estimate
-        sample.integral = np.mean(ys / weights)
+        sample.integral = integral
         # variance of the weighted function samples
-        sample.integral_err = np.sqrt(np.var(ys / weights) / eval_count)
+        sample.integral_err = stderr
         return sample
 
 
