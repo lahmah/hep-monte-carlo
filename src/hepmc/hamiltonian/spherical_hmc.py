@@ -185,15 +185,19 @@ class StaticSphericalHMC(HamiltonianUpdate):
             #prob = (candidate.pdf * self.p_dist.pdf(candidate.momentum) /
             #        state.pdf / self.p_dist.pdf(state.momentum))
             U_current = self.target_density.pot(state)
+            #if np.isinf(U_current): # shouldn't be necessary
+            #    return 0
             H_current = U_current + .5*state.momentum.dot(state.momentum)
             U_proposal = self.target_density.pot(candidate)
+            if np.isinf(U_proposal):
+                return -np.inf
             H_proposal = U_proposal + .5*candidate.momentum.dot(candidate.momentum)
             log_prob = -H_proposal + H_current
-            if np.isinf(log_prob):
-                return 0
+            if np.isinf(log_prob): # shouldn't be necessary
+                return -np.inf
             return log_prob
         except RuntimeWarning:
-            return 0
+            return -np.inf
 
     def next_state(self, state, iteration):
         candidate = self.proposal(state)
@@ -206,7 +210,7 @@ class StaticSphericalHMC(HamiltonianUpdate):
             state = self.init_state(state)
             log_accept = self.accept(state, candidate)
 
-        if np.log(np.random.rand()) < min(0, log_accept):
+        if not np.isinf(log_accept) and np.log(np.random.rand()) < min(0, log_accept):
             next_state = candidate
         else:
             next_state = state
