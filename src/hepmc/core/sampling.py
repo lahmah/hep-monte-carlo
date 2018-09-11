@@ -7,24 +7,58 @@ according to a general (unnormalized) distribution function about which
 little or nothing is known.
 """
 
+from typing import Optional
 import numpy as np
 from .util import interpret_array, effective_sample_size, bin_wise_chi2
 from .sample_plotting import plot1d, plot2d
+from ..core.density import Density
 
 import os
 import time
 import json
 
 
-def _set(*args):
-    return all(arg is not None for arg in args)
+#def _set(*args):
+#    return all(arg is not None for arg in args)
 
 
 class Sample(object):
-    def __init__(self, **kwargs):
-        self.data = None
-        self.target = None
-        self.weights = None
+    """A general sample class.
+
+    A sample contains 2-dimensional data (shape: (n_samples, n_dimensions)) and 
+    can contain optional information like target pdf values. It always provides 
+    a weight member. If the weights haven't been filled by the sampler, a normalized 
+    vector containing the same value in every entry will be returned.
+    """
+    def __init__(self, data: any, target: Optional[Density] = None, weights: Optional[any] = None) -> None:
+        """
+        Parameters
+        ----------
+        data : ndarray
+            2D array containing the samples
+            first dimenion indices the individual samples
+            second dimension indices the phase space dimensions
+        target : Density, optional
+            the target density to which the sample corresponds
+        weights : ndarray, optional
+            1D array containing the weights
+        """
+        # check that arrays are actually numpy arrays and have the right dimension
+        try:
+            if data.ndim != 2:
+                raise RuntimeWarning("The data array is expected to have 2 dimensions.")
+        except AttributeError:
+            raise RuntimeWarning("'data' has to be a numpy array.")
+        if weights is not None:
+            try:
+                if weights.ndim != 1:
+                    raise RuntimeWarning("The weights array is expected to have 1 dimension.")
+            except AttributeError:
+                raise RuntimeWarning("'weights' has to be a numpy array.")
+
+        self._data = data
+        self._target = target
+        self._weights = weights
 
         self._bin_wise_chi2 = None
         self._effective_sample_size = None
@@ -39,46 +73,42 @@ class Sample(object):
             ('effective_sample_size', 'effective sample size', '%s'),
         ]
 
-        for key in kwargs:
-            setattr(self, key, kwargs[key])
-
-    def extend_array(self, key, array):
-        current = getattr(self, key)
-        if current is None:
-            setattr(self, key, array)
-        else:
-            setattr(self, key, np.concatenate((current, array), axis=0))
-
     # PROPERTIES
     @property
+    def data(self):
+        return self._data
+
+    @property
+    def target(self):
+        return self._target
+
+    @property
+    def weights(self):
+        return self.weights
+
+    @property
     def size(self):
-        try:
-            return self.data.shape[0]
-        except AttributeError:
-            return None
+        return self.data.shape[0]
 
     @property
     def ndim(self):
-        try:
-            return self.data.shape[1]
-        except AttributeError:
-            return None
+        return self.data.shape[1]
 
     @property
     def mean(self):
-        if self._mean is None and _set(self.data):
+        if self._mean is None:
             self._mean = np.mean(self.data, axis=0)
         return self._mean
 
     @property
     def variance(self):
-        if self._variance is None and _set(self.data):
+        if self._variance is None:
             self._variance = np.var(self.data, axis=0)
         return self._variance
 
     @property
     def effective_sample_size(self):
-        if self._effective_sample_size is None and _set(self.data, self.target):
+        if self._effective_sample_size is None and self.target is not None:
             try:
                 self._effective_sample_size = effective_sample_size(
                     self, self.target.mean, self.target.variance)
@@ -89,13 +119,11 @@ class Sample(object):
 
     @property
     def bin_wise_chi2(self):
-        if self._bin_wise_chi2 is None and _set(self.data, self.target):
+        if self._bin_wise_chi2 is None and self.target is not None:
             self._bin_wise_chi2 = bin_wise_chi2(self)
         return self._bin_wise_chi2
 
     def plot(self):
-        if self.data is None:
-            return None
         if self.ndim == 1:
             return plot1d(self, target=self.target)
         if self.ndim == 2:
