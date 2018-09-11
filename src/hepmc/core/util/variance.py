@@ -28,21 +28,20 @@ class online_variance:
     """Numerically stable online calculation of variance.
 
     Based on Welford's algorithm.
+
+    Attributes
+    ----------
+    self.n : int
+        Number of entries.
+    self.mean : float
+        Mean of all entries.
+    self.M2 : float
+        Variable used to calculate the variance.
     
     .. todo::
         Use hidden attributes and make actual getters.
     """
     def __init__(self) -> None:
-        """
-        Attributes
-        ----------
-        self.n : int
-            Number of entries.
-        self.mean : float
-            Mean of all entries.
-        self.M2 : float
-            Variable used to calculate the variance.
-        """
         self.n = 0
         self.mean = 0.
         self.M2 = 0.
