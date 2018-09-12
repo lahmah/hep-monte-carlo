@@ -7,7 +7,7 @@ according to a general (unnormalized) distribution function about which
 little or nothing is known.
 """
 
-from typing import Optional
+from typing import Optional, Callable
 import numpy as np
 from .util import interpret_array, effective_sample_size, bin_wise_chi2
 from .sample_plotting import plot1d, plot2d
@@ -30,7 +30,7 @@ class Sample(object):
     a weight member. If the weights haven't been filled by the sampler, a normalized 
     vector containing the same value in every entry will be returned.
     """
-    def __init__(self, data: any, target: Optional[Density] = None, weights: Optional[any] = None) -> None:
+    def __init__(self, data: any, target: Optional[Density] = None, pdf: Optional[any] = None, pot: Optional[any] = None, weights: Optional[any] = None) -> None:
         """
         Parameters
         ----------
@@ -40,6 +40,10 @@ class Sample(object):
             second dimension indices the phase space dimensions
         target : Density, optional
             the target density to which the sample corresponds
+        pdf : ndarray, optional
+            values of target pdf evaluated at data points
+        pot : ndarray, optional
+            values of target potential (minus log pdf) evaluated at data points
         weights : ndarray, optional
             1D array containing the weights
         """
@@ -58,6 +62,8 @@ class Sample(object):
 
         self._data = data
         self._target = target
+        self._pdf = pdf
+        self._pot = pot
         self._weights = weights
 
         self._bin_wise_chi2 = None
@@ -83,8 +89,24 @@ class Sample(object):
         return self._target
 
     @property
+    def pdf(self):
+        if self._pdf is None and self._target is not None:
+            print("PDF values have not been set but will be calculated now...")
+            self._pdf = self._target.pdf(self._data)
+        return self._pdf
+
+    @property
+    def pot(self):
+        if self._pot is None and self._target is not None:
+            print("Potential values have not been set but will be calculated now...")
+            self._pot = self._target.pot(self._data)
+        return self._pot
+
+    @property
     def weights(self):
-        return self.weights
+        if self._weights is None:
+            self._weights = np.full(self.size, 1./self.size)
+        return self._weights
 
     @property
     def size(self):
@@ -172,61 +194,67 @@ class Sample(object):
         return (type(self).__name__ + '\n\t' + '\n\t'.join(
             '%s: %s' % (t, e) for t, e in zip(*self._data_table())))
 
+class UniformSampler(object):
+    """Uniform sampler.
+    
+    Produces uniformly distributed points in a [0, 1] hypercube. 
+    If a target is given, the corresponding weights will be calculated.
+    """
+    def __init__(self, target: Optional[Density] = None) -> None:
+        self.target = target
 
-# ACCEPTANCE REJECTION
+    def sample(self, sample_size: int) -> Sample:
+        data=np.random.rand(sample_size, self.target.ndim)
+        if self.target is not None:
+            weights = self.target.pdf(data)
+            return Sample(data=data, target=self.target, pdf=weights, weights=weights)
+        else:
+            return Sample(data=data)
+
 class AcceptRejectSampler(object):
+    """ Acceptance Rejection method for sampling a given pdf.
+    
+    The method uses a known distribution and sampling method to propose
+    samples which are then accepted with the probability
+    pdf(x)/(c * sampling_pdf(x)), thus producing the desired distribution. 
+    The resulting sample is unweighted.
+    
+    .. todo::
+        Handle points that lie above the bound.
+    """
 
-    def __init__(self, pdf, bound, ndim=1, sampling=None, sampling_pdf=None):
-        """ Acceptance Rejection method for sampling a given pdf.
-
-        The method uses a known distribution and sampling method to propose
-        samples which are then accepted with the probability
-        pdf(x)/(c * sampling_pdf(x)), thus producing the desired distribution.
-
-        :param pdf: Unnormalized desired probability distribution of the sample.
-        :param bound: Constant such that pdf(x) <= bound * sampling_pdf(x)
-            for all x in the range of sampling.
-        :param ndim: Dimensionality of the sample points.
-            This must conform with sampling and sampling_pdf.
-        :param sampling: Generate a given number of samples according to
-            sampling_pdf. The default is a uniform distribution. The algorithm
-            gets more efficient, the closer the sampling is to the desired
-            distribution pdf(x).
-        :param sampling_pdf: Returns the probability of sampling to generate
-            a given sample. Must accept ndim arguments, each of some
-            length N and return an array of floats of length N. Ignored if
-            sampling was not specified.
+    def __init__(self, target: Density, bound: float, 
+            sampler: Optional[any] = None, sampling_pdf: Optional[Callable[[any], any]] = None) -> None:
         """
-        self.pdf = pdf
-        self.c = bound
-        self.ndim = ndim
+        Parameters
+        ----------
+        target
+            Unnormalized desired probability distribution of the sample.
+        bound
+            Constant such that pdf(x) <= bound * sampling_pdf(x)
+            for all x in the range of sampling.
+        sampler
+            The sampler which generates the sample. The default is a uniform sampler.
+        """
+        self.target = target
+        self.bound = bound
+        self.ndim = target.ndim
 
-        if sampling is None:
-            def sampling(sample_size):
-                """ Generate a uniform sample. """
-                sample = np.random.rand(sample_size * self.ndim)
-                return sample.reshape(sample_size, self.ndim)
+        if sampler is None:
+            sampler = UniformSampler(target)
+            def sampling_pdf(x):
+                return np.ones(x.size)
 
-            def sampling_pdf(*_):
-                """ Uniform sample distribution. """
-                return 1
-
-        self.sampling = sampling
+        self.sampler = sampler
         self.sampling_pdf = sampling_pdf
 
-    def sample(self, sample_size):
-        """ Generate a sample according to self.pdf of given size.
-
-        :param sample_size: Number of samples
-        :return: Numpy array with shape (sample_size, self.ndim).
-        """
+    def sample(self, sample_size: int) -> None:
         x = np.empty((sample_size, self.ndim))
 
         indices = np.arange(sample_size)
         while indices.size > 0:
-            proposal = interpret_array(self.sampling(indices.size), self.ndim)
-            accept = np.random.rand(indices.size) * self.c * self.sampling_pdf(
-                *proposal.transpose()) <= self.pdf(*proposal.transpose())
+            proposal = self.sampler.sample(indices.size).data
+            accept = np.random.rand(indices.size) * self.bound * self.sampling_pdf(proposal) <= self.target.pdf(proposal)
             x[indices[accept]] = proposal[accept]
             indices = indices[np.logical_not(accept)]
-        return Sample(data=x, target=self.pdf)
+        return Sample(data=x, target=self.target)
