@@ -14,16 +14,6 @@ class ImportanceMC(object):
 
     By default a uniform probability distribution is used, making the method
     equivalent to plain MC.
-
-    Example:
-        >>> from hepmc import densities
-        >>> sampling = lambda size: np.random.rand(size)**2
-        >>> pdf = lambda x: 2*x
-        >>> dist = Density.make(ndim=1, pdf=pdf, rvs=sampling)
-        >>> mc_imp = ImportanceMC(1, dist)
-        >>> est, err = mc_imp(lambda x: x, 1000)
-        >>> est, err  # the pdf is ideal since fn(x)/(2*x) = 1/2 = const
-        (0.5, 0.0)
     """
 
     def __init__(self, dist: Distribution, name: str = "MC Importance") -> None:
@@ -98,7 +88,7 @@ class ImportanceMC(object):
     #    return sample
 
     # numpy version
-    def __call__(self, target, eval_count) -> Tuple[Sample, float, float]:
+    def integrate(self, target, eval_count) -> Tuple[Sample, float, float]:
         """Approximate the integral of fn.
 
         Parameters
