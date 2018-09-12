@@ -1,31 +1,39 @@
 import numpy as np
-from .integration import IntegrationSample
+from typing import Tuple
+
 from ..util import online_variance, is_power_of_ten
+from ..density import Distribution
+from ..sampling import Sample
 
 
 class ImportanceMC(object):
+    """ Importance sampling Monte Carlo integration.
 
-    def __init__(self, dist, name="MC Importance"):
-        """ Importance sampling Monte Carlo integration.
+    Importance sampling replaces the uniform sample distribution of plain
+    Monte Carlo with a custom pdf.
 
-        Importance sampling replaces the uniform sample distribution of plain
-        Monte Carlo with a custom pdf.
+    By default a uniform probability distribution is used, making the method
+    equivalent to plain MC.
 
-        By default a uniform probability distribution is used, making the method
-        equivalent to plain MC.
+    Example:
+        >>> from hepmc import densities
+        >>> sampling = lambda size: np.random.rand(size)**2
+        >>> pdf = lambda x: 2*x
+        >>> dist = Density.make(ndim=1, pdf=pdf, rvs=sampling)
+        >>> mc_imp = ImportanceMC(1, dist)
+        >>> est, err = mc_imp(lambda x: x, 1000)
+        >>> est, err  # the pdf is ideal since fn(x)/(2*x) = 1/2 = const
+        (0.5, 0.0)
+    """
 
-        Example:
-            >>> from hepmc import densities
-            >>> sampling = lambda size: np.random.rand(size)**2
-            >>> pdf = lambda x: 2*x
-            >>> dist = Density.make(ndim=1, pdf=pdf, rvs=sampling)
-            >>> mc_imp = ImportanceMC(1, dist)
-            >>> est, err = mc_imp(lambda x: x, 1000)
-            >>> est, err  # the pdf is ideal since fn(x)/(2*x) = 1/2 = const
-            (0.5, 0.0)
-
-        :param dist: Distribution to use for sampling.
-        :param name: Name of the method that can be used as label in
+    def __init__(self, dist: Distribution, name: str = "MC Importance") -> None:
+        """
+        Parameters
+        ----------
+        dist
+            Distribution to use for sampling.
+        name
+            Name of the method that can be used as label in
             plotting routines (can be changed to name parameters).
         """
         self.method_name = name
@@ -33,53 +41,99 @@ class ImportanceMC(object):
         self.dist = dist
         self.ndim = dist.ndim
 
-    def __call__(self, fn, eval_count):
-        """ Approximate the integral of fn.
+    ## sequential version
+    #def __call__(self, target, eval_count) -> Tuple[Sample, float, float]:
+    #    """Approximate the integral of fn.
 
-        :param fn: Integrand, taking ndim numpy arrays and returning a number.
-        :param eval_count: Total number of function evaluations.
-        :return: Tuple (integral_estimate, error_estimate).
+    #    Parameters
+    #    ----------
+    #    fn
+    #        Integrand, taking ndim numpy arrays and returning a number.
+    #    eval_count
+    #        Total number of function evaluations.
+
+    #    Returns
+    #    -------
+    #    Tuple[Sample, float, float]
+    #        (sample, integral_estimate, error_estimate)
+    #    """
+    #    xs = np.empty((eval_count, self.ndim))
+    #    ys = np.empty(eval_count)
+    #    weights = np.empty(eval_count)
+
+    #    trials = 0
+    #    accepted = 0
+    #    var = online_variance()
+    #    skip = 1
+    #    for i in range(eval_count):
+    #        y = 0.
+    #        while y == 0.:
+    #            trials += 1
+    #            x = self.dist.rvs(1)
+    #            y = fn(x)
+    #        accepted += 1
+    #        xs[i] = x
+    #        ys[i] = y
+    #        weights[i] = y/self.dist.pdf(x)
+    #        var.add_variable(weights[i])
+
+    #        n = i+1
+    #        if n % skip == 0:
+    #            if n == 1:
+    #                print("Event 1\t(avg. trials per event: %f)" % trials)
+    #            else:
+    #                integral = accepted/trials * var.get_mean()
+    #                stderr = np.sqrt(var.get_variance() * accepted/trials**2)
+    #                percentage = stderr/integral*100
+    #                print("Event %i\t(avg. trials per event: %f)\tXS = %f pb +- ( %f pb = %f %%)" % (n, trials/accepted, integral, stderr, percentage))
+    #            if is_power_of_ten(n):
+    #                skip *= 10
+
+    #    sample = IntegrationSample(data=xs, function_values=ys, weights=weights)
+
+    #    # integral estimate
+    #    sample.integral = integral
+    #    # variance of the weighted function samples
+    #    sample.integral_err = stderr
+    #    return sample
+
+    # numpy version
+    def __call__(self, target, eval_count) -> Tuple[Sample, float, float]:
+        """Approximate the integral of fn.
+
+        Parameters
+        ----------
+        target
+            The target distribution.
+        eval_count
+            Total number of function evaluations.
+
+        Returns
+        -------
+        Tuple[Sample, float, float]
+            (sample, integral_estimate, error_estimate)
         """
         xs = np.empty((eval_count, self.ndim))
         ys = np.empty(eval_count)
         weights = np.empty(eval_count)
-
         trials = 0
-        accepted = 0
-        var = online_variance()
-        skip = 1
-        for i in range(eval_count):
-            y = 0.
-            while y == 0.:
-                trials += 1
-                x = self.dist.rvs(1)
-                y = fn(x)
-            accepted += 1
-            xs[i] = x
-            ys[i] = y
-            weights[i] = y/self.dist.pdf(x)
-            var.add_variable(weights[i])
 
-            n = i+1
-            if n % skip == 0:
-                if n == 1:
-                    print("Event 1\t(avg. trials per event: %f)" % trials)
-                else:
-                    integral = accepted/trials * var.get_mean()
-                    stderr = np.sqrt(var.get_variance() * accepted/trials**2)
-                    percentage = stderr/integral*100
-                    print("Event %i\t(avg. trials per event: %f)\tXS = %f pb +- ( %f pb = %f %%)" % (n, trials/accepted, integral, stderr, percentage))
-                if is_power_of_ten(n):
-                    skip *= 10
+        indices = np.arange(eval_count)
+        while indices.size > 0:
+            trials += indices.size
+            x = self.dist.rvs(indices.size)
+            y = target.pdf(x)
+            in_bounds = y != 0.
+            xs[indices[in_bounds]] = x[in_bounds]
+            ys[indices[in_bounds]] = y[in_bounds]
+            indices = indices[np.logical_not(in_bounds)]
 
-        sample = IntegrationSample(data=xs, function_values=ys, weights=weights)
+        weights = ys / self.dist.pdf(xs)
+        integral = eval_count/trials * weights.mean()
+        stderr = np.sqrt(weights.var() * eval_count/trials**2)
+        sample = Sample(data=xs, target=target, pdf=ys, weights=weights)
 
-        # integral estimate
-        sample.integral = integral
-        # variance of the weighted function samples
-        sample.integral_err = stderr
-        return sample
-
+        return sample, integral, stderr
 
 class MultiChannelMC(object):
 
