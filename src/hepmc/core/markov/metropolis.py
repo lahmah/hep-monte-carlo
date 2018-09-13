@@ -2,7 +2,7 @@ import numpy as np
 
 from ..density import Density
 from .base import MarkovUpdate
-from ..densities import Uniform
+from ..proposals import Gaussian
 
 
 class MetropolisState(np.ndarray):
@@ -95,7 +95,7 @@ class MetropolisUpdate(MarkovUpdate):
 
 class DefaultMetropolis(MetropolisUpdate):
 
-    def __init__(self, target, proposal=None, adaptive=False):
+    def __init__(self, target, proposal=None, cov=None, adaptive=False):
         """ Use the Metropolis algorithm to generate a sample.
 
         Example:
@@ -110,7 +110,7 @@ class DefaultMetropolis(MetropolisUpdate):
         :param proposal: A Proposal object.
         """
         if proposal is None:
-            proposal = Uniform(target.ndim)
+            proposal = Gaussian(target.ndim, cov)
         self._proposal = proposal
 
         # must be at the and since it calls proposal_pdf to see if it works
