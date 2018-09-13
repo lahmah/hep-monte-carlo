@@ -21,8 +21,7 @@ class MarkovSample(Sample):
 class MarkovUpdate(object):
     """ Basic update mechanism of a Markov chain. """
 
-    def __init__(self, ndim, is_adaptive=False, target=None):
-        self.ndim = ndim
+    def __init__(self, target, is_adaptive=False):
         self.target = target
         self.is_adaptive = is_adaptive
 
