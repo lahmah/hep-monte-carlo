@@ -42,6 +42,14 @@ class MarkovUpdate(object):
         """
         raise NotImplementedError("AbstractMarkovUpdate is abstract.")
 
+    def generator(self, sample_size, init_state):
+        i = 0
+        state = init_state
+        while i < sample_size:
+            state = self.next_state(state, i)
+            yield state
+            i += 1
+
     def sample(self, sample_size, initial, out_mask=None, n_batches=20):
         """ Generate a sample of given size.
 
