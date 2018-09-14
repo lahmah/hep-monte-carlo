@@ -61,18 +61,16 @@ class MarkovUpdate(object):
         """
         # initialize sampling
         state = self.init_state(np.atleast_1d(initial))
-        if len(state) != self.ndim:
-            raise ValueError('initial must have dimension ' + str(self.ndim))
+        if len(state) != self.target.ndim:
+            raise ValueError('initial must have dimension ' + str(self.target.ndim))
         self.init_adapt(state)  # initial adaptation
 
         batch_length = int(sample_size/n_batches)
 
-        sample = MarkovSample()
-
         tags = dict()
         tagged = dict()
 
-        chain = np.empty((sample_size, self.ndim))
+        chain = np.empty((sample_size, self.target.ndim))
         chain[0] = state
 
         batch_accept = deque(maxlen=batch_length)
@@ -86,7 +84,6 @@ class MarkovUpdate(object):
                 if current_seq > max_seq:
                     max_seq = current_seq
                 current_seq = 1
-                sample.accepted += 1
             else:
                 batch_accept.append(0)
                 current_seq += 1
@@ -120,10 +117,8 @@ class MarkovUpdate(object):
         for parser in tagged:
             chain[tagged[parser]] = parser(chain[tagged[parser]], tags[parser])
 
-        sample.data = chain
-        sample.target = self.target
+        sample = Sample(data = chain, target = self.target)
         return sample
-
 
 class CompositeMarkovUpdate(MarkovUpdate):
 
