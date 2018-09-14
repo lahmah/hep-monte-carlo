@@ -2,12 +2,13 @@ import numpy as np
 from collections import deque
 from ..sampling import Sample
 from ..util import is_power_of_ten
+from ..density import Density
 
 # MARKOV CHAIN
 class MarkovUpdate(object):
-    """ Basic update mechanism of a Markov chain. """
+    """Basic update mechanism of a Markov chain. """
 
-    def __init__(self, target, is_adaptive=False):
+    def __init__(self, target: Density, is_adaptive: bool = False) -> None:
         self.target = target
         self.is_adaptive = is_adaptive
 
@@ -18,16 +19,24 @@ class MarkovUpdate(object):
         pass
 
     def init_state(self, state):
-        return state  # may initialize other state attributes (such as pdf)
+        """Sets the needed attributes (e.g. the potential) of a state.
 
-    def next_state(self, state, iteration):
-        """ Get the next state in the Markov chain.
+        This abstract implementation does nothing.
+        """
+        return state
 
-        :return: The next state.
+    def next_state(self, state, iteration: int):
+        """Get the next state in the Markov chain.
+
+        Returns
+        -------
+        MarkovState
+            The next state.
         """
         raise NotImplementedError("AbstractMarkovUpdate is abstract.")
 
-    def generator(self, sample_size, init_state):
+    def generator(self, sample_size: int, init_state):
+        """Returns a generator that yields new states sequentially."""
         i = 0
         state = init_state
         while i < sample_size:
@@ -35,15 +44,24 @@ class MarkovUpdate(object):
             yield state
             i += 1
 
-    def sample(self, sample_size, initial, out_mask=None, n_batches=20):
-        """ Generate a sample of given size.
+    def sample(self, sample_size: int, initial, out_mask=None, n_batches: int = 20) -> Sample:
+        """Generate a sample of given size.
 
-        :param sample_size: Number of samples to generate.
-        :param initial: Initial value of the Markov chain. Internally
-            converted to numpy array.
-        :param out_mask: Slice object, return only this slice of the output
+        Parameters
+        ----------
+        sample_size
+            Number of samples to generate.
+        initial
+            Initial state of the Markov chain. Can be a MarkovState
+            or a numpy array.
+        out_mask
+            Slice object, return only this slice of the output
             chain (useful if sampler uses artificial variables).
-        :return: Numpy array with shape (sample_size, self.ndim).
+
+        Returns
+        -------
+        Sample
+            A sample object containing the data.
         """
         # initialize sampling
         state = self.init_state(np.atleast_1d(initial))
