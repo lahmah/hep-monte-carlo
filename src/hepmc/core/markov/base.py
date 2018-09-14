@@ -3,20 +3,6 @@ from collections import deque
 from ..sampling import Sample
 from ..util import is_power_of_ten
 
-class MarkovSample(Sample):
-
-    def __init__(self, **kwargs):
-        self.accepted = 0
-
-        super().__init__(**kwargs)
-
-        self._sample_info.append(('accept_ratio', 'acceptance rate', '%f'))
-
-    @property
-    def accept_ratio(self):
-        return self.accepted / self.size
-
-
 # MARKOV CHAIN
 class MarkovUpdate(object):
     """ Basic update mechanism of a Markov chain. """
