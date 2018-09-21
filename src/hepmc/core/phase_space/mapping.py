@@ -59,7 +59,7 @@ class MappedDensity(Density):
     def pdf_gradient(self, xs):
         raise NotImplementedError  # mapping pdf grad. generally not known
 
-    @hypercube_bounded(1, self_has_ndim=True)
+    @hypercube_bounded(1, null_value=np.inf, self_has_ndim=True)
     def pot(self, xs):
         ps = self.mapping.map(xs)
         pot = self.density.pot(ps)
