@@ -40,7 +40,7 @@ class HamiltonianUpdate(MetropolisUpdate):
         :param sim_method: Class used to simulate the steps.
             A custom implementation must follow that of HamiltonLeapfrog.
         """
-        super().__init__(target_density.ndim, target_density.pdf, is_adaptive)
+        super().__init__(target_density, is_adaptive)
         self.p_dist = p_dist
         self.target_density = target_density
 
@@ -50,16 +50,6 @@ class HamiltonianUpdate(MetropolisUpdate):
                 p_dist.pot_gradient, step_size, steps)
         else:
             self.simulate = simulate
-
-    def accept(self, state, candidate):
-        try:
-            prob = (candidate.pdf * self.p_dist.pdf(candidate.momentum) /
-                    state.pdf / self.p_dist.pdf(state.momentum))
-            if np.isnan(prob):
-                return 0
-            return prob
-        except RuntimeWarning:
-            return 0
 
     def proposal_pdf(self, state, candidate):
         pass  # update is Metropolis-like
@@ -75,10 +65,10 @@ class HamiltonianUpdate(MetropolisUpdate):
         # p *= -1
 
         if q is None:
-            pdf = 0
+            pot = np.inf
         else:
-            pdf = self.target_density.pdf(q)
-        return HamiltonState(q, momentum=p, pdf=pdf)
+            pot = self.target_density.pot(q)
+        return HamiltonState(q, momentum=p, pot=pot)
 
     def init_state(self, state):
         if not isinstance(state, HamiltonState):
@@ -105,5 +95,4 @@ class HamiltonianUpdate(MetropolisUpdate):
 
     def sample(self, sample_size, initial, out_mask=None, log_every=5000):
         sample = super().sample(sample_size, initial, out_mask, log_every)
-        sample.target = self.target_density
         return sample
