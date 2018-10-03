@@ -59,7 +59,7 @@ class AdaptiveMetropolisUpdate(DefaultMetropolis):
 
         self.t_initial = t_initial
         self.adapt_schedule = adapt_schedule
-        self.s_d = 2.4 ** 2 / self.ndim
+        self.s_d = 2.4 ** 2 / self.target.ndim
         self.epsilon = 1e-6
         
         self.mean = None
