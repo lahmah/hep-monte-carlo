@@ -1,9 +1,9 @@
 import numpy as np
 from collections import deque
 from .hmc import HamiltonianUpdate, HamiltonState
-from ..core.densities.gaussian import Gaussian
-from ..core.sampling import Sample
-from ..core.util import is_power_of_ten
+from ..densities.gaussian import Gaussian
+from ..sampling import Sample
+from ..util import is_power_of_ten
 
 
 class SphericalHMCState(HamiltonState):

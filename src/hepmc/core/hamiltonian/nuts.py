@@ -1,7 +1,7 @@
 import numpy as np
 
 from .dual_average import DualAveragingHMC
-from ..core.markov.metropolis import MetropolisState
+from ..markov.metropolis import MetropolisState
 
 
 class NUTSUpdate(DualAveragingHMC):
