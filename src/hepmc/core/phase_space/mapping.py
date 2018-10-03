@@ -1,6 +1,6 @@
 from ..density import Density
 from ..util import hypercube_bounded
-from ..markov import MarkovUpdate
+from ..markov.base import MarkovUpdate
 import numpy as np
 
 
