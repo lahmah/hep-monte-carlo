@@ -40,6 +40,9 @@ class Sarge(Distribution):
         pout = [Vec4D(momentum) for momentum in out_state]
         return self.sarge.generate_weight(self.pin, pout, self.s0)
 
+    def proposal_mlogpdf(self, state, candidate):
+        return -np.log(self.proposal_pdf(state, candidate))
+
     def pdf(self, xs):
         return np.array([self.proposal_pdf(None, x) for x in xs])
 
