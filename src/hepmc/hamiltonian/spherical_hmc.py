@@ -1,8 +1,8 @@
 import numpy as np
 from collections import deque
 from .hmc import HamiltonianUpdate, HamiltonState
-from ..core.densities import Gaussian
-from ..core.markov import MarkovSample
+from ..core.densities.gaussian import Gaussian
+from ..core.sampling import Sample
 from ..core.util import is_power_of_ten
 
 
@@ -103,9 +103,9 @@ class StaticSphericalHMC(HamiltonianUpdate):
 
         # default limits: unit hypercube
         if lim_lower is None:
-            lim_lower = np.zeros(self.ndim)
+            lim_lower = np.zeros(self.target_density.ndim)
         if lim_upper is None:
-            lim_upper = np.ones(self.ndim)
+            lim_upper = np.ones(self.target_density.ndim)
 
         self.stepsize_min = stepsize_min
         self.stepsize_max = stepsize_max
@@ -115,7 +115,7 @@ class StaticSphericalHMC(HamiltonianUpdate):
         self.lim_upper = lim_upper
         
         self.J_xtheta = (self.lim_upper-self.lim_lower)/(np.concatenate(
-            (np.full(self.ndim-1, 1), [2]))*np.pi)
+            (np.full(self.target_density.ndim-1, 1), [2]))*np.pi)
 
     def theta_to_x(self, theta):
         return self.lim_lower + theta*self.J_xtheta
@@ -174,10 +174,10 @@ class StaticSphericalHMC(HamiltonianUpdate):
         #H_proposal = U + .5*z.dot(z)
         
         x = self.theta_to_x(q)
-        prob = self.target_density.pdf(x)
+        pot = self.target_density.pot(x)
         #return SphericalHMCState(x, momentum=z, tag=self.log_weight(q),
         #                         pot_gradient=du, pdf=prob, theta=q)
-        return SphericalHMCState(x, momentum=z, pot_gradient=du, pdf=prob, theta=q)
+        return SphericalHMCState(x, momentum=z, pot_gradient=du, pot=pot, theta=q)
 
     def accept(self, state, candidate):
         """Return the logarithm of the acceptance probability."""
@@ -210,13 +210,17 @@ class StaticSphericalHMC(HamiltonianUpdate):
             state = self.init_state(state)
             log_accept = self.accept(state, candidate)
 
-        if not np.isinf(log_accept) and np.log(np.random.rand()) < min(0, log_accept):
+        #if not np.isinf(log_accept) and np.log(np.random.rand()) < min(0, log_accept):
+        if np.log(np.random.rand()) < log_accept:
             next_state = candidate
         else:
             next_state = state
 
         # give the state a weight
+        # we have to transform out of log space here in order to be compatible with
+        # mixing updates
         next_state.weight = np.exp(self.log_weight(next_state.theta))
+        #next_state.log_weight = self.log_weight(next_state.theta)
 
         if self.is_adaptive:
             self.adapt(iteration, state, next_state, log_accept)
@@ -224,7 +228,7 @@ class StaticSphericalHMC(HamiltonianUpdate):
         return next_state
 
     def log_weight(self, q):
-        log_weight = (np.arange(1, self.ndim) - self.ndim).dot(
+        log_weight = (np.arange(1, self.target_density.ndim) - self.target_density.ndim).dot(
             np.log(np.sin(q[:-1]))) + np.sum(np.log(self.J_xtheta))
         return log_weight
 
@@ -236,18 +240,16 @@ class StaticSphericalHMC(HamiltonianUpdate):
 
         # initialize sampling
         state = self.init_state(np.atleast_1d(initial))
-        if len(state) != self.ndim:
-            raise ValueError('initial must have dimension ' + str(self.ndim))
+        if len(state) != self.target_density.ndim:
+            raise ValueError('initial must have dimension ' + str(self.target_density.ndim))
         self.init_adapt(state)  # initial adaptation
 
         batch_length = int(sample_size/n_batches)
 
-        sample = MarkovSample()
-
         tags = dict()
         tagged = dict()
 
-        chain = np.empty((sample_size, self.ndim))
+        chain = np.empty((sample_size, self.target_density.ndim))
         chain[0] = state
         #log_weights = np.empty(sample_size)
         #log_weights[0] = self.log_weight(state)
@@ -265,13 +267,12 @@ class StaticSphericalHMC(HamiltonianUpdate):
                 if current_seq > max_seq:
                     max_seq = current_seq
                 current_seq = 1
-                sample.accepted += 1
             else:
                 batch_accept.append(0)
                 current_seq += 1
 
             chain[i] = state
-            #log_weights[i] = self.log_weight(state)
+            #log_weights[i] = state.log_weight
             weights[i] = state.weight
             try:
                 try:
@@ -301,10 +302,8 @@ class StaticSphericalHMC(HamiltonianUpdate):
         for parser in tagged:
             chain[tagged[parser]] = parser(chain[tagged[parser]], tags[parser])
 
-        sample.data = chain
-        #sample.weights = np.exp(log_weights - log_weights.mean())
-        sample.weights = weights
-        sample.target = self.target_density
+        #weights = np.exp(log_weights - np.median(log_weights))
+        sample = Sample(data=chain, target=self.target_density, weights=weights)
         return sample
 
 
