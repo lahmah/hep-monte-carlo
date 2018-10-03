@@ -180,7 +180,8 @@ class MixingMarkovUpdate(MarkovUpdate):
                 if update.target is not None:
                     target = update.target
                     break
-        super().__init__(ndim, is_adaptive=is_adaptive, target=target)
+        super().__init__(is_adaptive=is_adaptive, target=target)
+        self.ndim = ndim
 
         self.updates = updates
         self.updates_count = len(updates)
@@ -241,8 +242,6 @@ class MixingMarkovUpdate(MarkovUpdate):
 
         batch_length = int(sample_size/n_batches)
 
-        sample = MarkovSample()
-
         tags = dict()
         tagged = dict()
 
@@ -273,7 +272,6 @@ class MixingMarkovUpdate(MarkovUpdate):
                 if current_seq > max_seq:
                     max_seq = current_seq
                 current_seq = 1
-                sample.accepted += 1
             else:
                 batch_accept.append(0)
                 current_seq += 1
@@ -322,7 +320,5 @@ class MixingMarkovUpdate(MarkovUpdate):
             sum_weights = np.sum(weights[mask])
             weights[mask] = weights[mask] / sum_weights * (count/sample_size)
 
-        sample.data = chain
-        sample.weights = weights
-        sample.target = self.target
+        sample = Sample(data=chain, target=self.target, weights=weights)
         return sample
