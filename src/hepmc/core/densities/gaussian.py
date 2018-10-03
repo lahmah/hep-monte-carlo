@@ -17,11 +17,11 @@ class Gaussian(Distribution):
 
         if cov is None:
             if scale is None:
-                self.cov = np.ones(ndim)
+                self.cov = np.eye(ndim, ndim)
             else:
                 if not np.isscalar(scale):
                     scale = np.atleast_1d(scale)
-                self.cov = scale ** 2
+                self.cov = scale ** 2 * np.eye(ndim, ndim)
         else:
             self.cov = cov
             if scale is not None:
@@ -71,8 +71,8 @@ class Gaussian(Distribution):
         return self._cov
 
     @cov.setter
-    def cov(self, value):
-        self._cov = np.eye(self.ndim, self.ndim) * np.asanyarray(value)
+    def cov(self, cov):
+        self._cov = cov
         self._cov_inv = np.linalg.inv(self._cov)
 
     def __repr__(self):
