@@ -9,6 +9,7 @@ little or nothing is known.
 
 from typing import Optional, Callable
 import numpy as np
+from tqdm import tqdm
 from .util import interpret_array, effective_sample_size, bin_wise_chi2
 from .sample_plotting import plot1d, plot2d
 from ..core.density import Density
@@ -214,47 +215,86 @@ class UniformSampler(object):
 class AcceptRejectSampler(object):
     """ Acceptance Rejection method for sampling a given pdf.
     
-    The method uses a known distribution and sampling method to propose
+    The method uses a known distribution to propose
     samples which are then accepted with the probability
-    pdf(x)/(c * sampling_pdf(x)), thus producing the desired distribution. 
-    The resulting sample is unweighted.
+    target_pdf(x)/(bound * sampling_pdf(x)), thus producing the desired distribution. 
     
-    .. todo::
-        Handle points that lie above the bound.
+    The resulting sample is partially unweighted: In the rare case that
+    target_pdf(x)/sampling_pdf(x) > bound the point x is given the weight
+    target_pdf(x)/(bound * sampling_pdf(x)).
     """
 
-    def __init__(self, target: Density, bound: float, 
-            sampler: Optional[any] = None, sampling_pdf: Optional[Callable[[any], any]] = None) -> None:
+    def __init__(self, target: Density, 
+            sampling_dist: Density, bound: float) -> None:
         """
         Parameters
         ----------
         target
             Unnormalized desired probability distribution of the sample.
+        sampling_dist
+            The distribution used to generate samples. Should be as close as 
+            possible to the target distribution.
         bound
-            Constant such that pdf(x) <= bound * sampling_pdf(x)
+            Constant such that target_pdf(x)/sampling_pdf(x) <= bound
             for all x in the range of sampling.
-        sampler
-            The sampler which generates the sample. The default is a uniform sampler.
         """
         self.target = target
+        self.sampling_dist = sampling_dist
         self.bound = bound
         self.ndim = target.ndim
 
-        if sampler is None:
-            sampler = UniformSampler(target)
-            def sampling_pdf(x):
-                return np.ones(x.size)
+    def sample(self, sample_size: int, batch_size: Optional[int] = 10000) -> Sample:
+        """
+        Generate a partially unweighted sample of the target distribution.
 
-        self.sampler = sampler
-        self.sampling_pdf = sampling_pdf
+        The parameter batch_size can be used to benefit from numpy and 
+        parallel sampling.
 
-    def sample(self, sample_size: int) -> None:
+        The average unweighting efficiency is printed at the end.
+
+        Parameters
+        ----------
+        sample_size
+            The size of the sample to be generated.
+        batch_size
+            Number of proposals to be generated at once.
+
+        Returns
+        -------
+        Sample
+            The generated sample.
+        """
         x = np.empty((sample_size, self.ndim))
+        weights = np.empty(sample_size)
 
-        indices = np.arange(sample_size)
-        while indices.size > 0:
-            proposal = self.sampler.sample(indices.size).data
-            accept = np.random.rand(indices.size) * self.bound * self.sampling_pdf(proposal) <= self.target.pdf(proposal)
-            x[indices[accept]] = proposal[accept]
-            indices = indices[np.logical_not(accept)]
-        return Sample(data=x, target=self.target)
+        n_todo = sample_size
+        trials = 0
+        with tqdm(total=sample_size) as pbar:
+            while n_todo > 0:
+                proposals = self.sampling_dist.rvs(batch_size)
+                aprob = self.target.pdf(proposals) / self.sampling_dist.pdf(proposals) / self.bound
+                u = np.random.rand(batch_size)
+                #accept = u < weights / self.bound
+                #n_accept = accept.sum()
+                #accepted = proposals[accept]
+                accept = np.where(u < aprob)[0]
+                n_accept = accept.size
+                if n_accept <= n_todo:
+                    x[sample_size-n_todo:sample_size-n_todo+n_accept] = proposals[accept]
+                    weights[sample_size-n_todo:sample_size-n_todo+n_accept] = aprob[accept]
+                    trials += batch_size
+                else:
+                    n_accept = n_todo
+                    accept = accept[:n_todo]
+                    x[sample_size-n_todo:] = proposals[accept]
+                    weights[sample_size-n_todo:] = aprob[accept]
+                    last_index = accept[-1]
+                    trials += last_index+1
+                n_todo -= n_accept
+                pbar.update(n_accept)
+            
+        weights[weights < 1.] = 1.
+        weights /= weights.sum()
+
+        print('Unweighting eff.:', sample_size/trials)
+        return Sample(data=x, target=self.target, weights=weights)
