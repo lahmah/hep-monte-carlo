@@ -1,5 +1,6 @@
 import numpy as np
-from typing import Tuple
+from typing import Tuple, Optional
+from tqdm import tqdm
 
 from ..util import online_variance, is_power_of_ten
 from ..density import Distribution
@@ -20,6 +21,8 @@ class ImportanceMC(object):
         """
         Parameters
         ----------
+        target
+            The target distribution.
         dist
             Distribution to use for sampling.
         name
@@ -89,52 +92,72 @@ class ImportanceMC(object):
     #    return sample
 
     # numpy version
-    def integrate(self, eval_count) -> Tuple[Sample, float, float]:
-        """Approximate the integral of fn.
+    def integrate(self, sample_size, batch_size: Optional[int] = 10000) -> Tuple[Sample, float, float]:
+        """Approximate the integral of the target distribution.
 
         Parameters
         ----------
-        target
-            The target distribution.
-        eval_count
-            Total number of function evaluations.
+        sample_size
+            The size of the sample to be generated.
+        batch_size
+            Number of proposals to be generated at once.
 
         Returns
         -------
         Tuple[Sample, float, float]
             (sample, integral_estimate, error_estimate)
         """
-        xs = np.empty((eval_count, self.ndim))
-        ys = np.empty(eval_count)
-        weights = np.empty(eval_count)
+        xs = np.empty((sample_size, self.ndim))
+        ys = np.empty(sample_size)
+
+        n_todo = sample_size
         trials = 0
+        #indices = np.arange(eval_count)
+        #while indices.size > 0:
+        with tqdm(total=sample_size) as pbar:
+            while n_todo > 0:
+                #trials += indices.size
+                #x = self.dist.rvs(indices.size)
+                x = self.dist.rvs(batch_size)
+                y = self.target.pdf(x)
+                #in_bounds = y != 0.
+                in_bounds = np.where(y != 0.)[0]
+                n_accept = in_bounds.size
+                #xs[indices[in_bounds]] = x[in_bounds]
+                #ys[indices[in_bounds]] = y[in_bounds]
+                #indices = indices[np.logical_not(in_bounds)]
+                if n_accept <= n_todo:
+                    xs[sample_size-n_todo:sample_size-n_todo+n_accept] = x[in_bounds]
+                    ys[sample_size-n_todo:sample_size-n_todo+n_accept] = y[in_bounds]
+                    trials += batch_size
+                else:
+                    n_accept = n_todo
+                    in_bounds = in_bounds[:n_todo]
+                    xs[sample_size-n_todo:] = x[in_bounds]
+                    ys[sample_size-n_todo:] = y[in_bounds]
+                    last_index = in_bounds[-1]
+                    trials += last_index + 1
+                n_todo -= n_accept
+                pbar.update(n_accept)
 
-        indices = np.arange(eval_count)
-        while indices.size > 0:
-            trials += indices.size
-            x = self.dist.rvs(indices.size)
-            y = self.target.pdf(x)
-            in_bounds = y != 0.
-            xs[indices[in_bounds]] = x[in_bounds]
-            ys[indices[in_bounds]] = y[in_bounds]
-            indices = indices[np.logical_not(in_bounds)]
-
-        print('Sampling efficiency:', eval_count/trials)
+        print('Sampling efficiency:', sample_size/trials)
         weights = ys / self.dist.pdf(xs)
-        integral = eval_count/trials * weights.mean()
-        stderr = np.sqrt(weights.var() * eval_count/trials**2)
+        integral = sample_size/trials * weights.mean()
+        stderr = np.sqrt(weights.var() * sample_size/trials**2)
         sample = Sample(data=xs, target=self.target, pdf=ys, weights=weights)
 
         return sample, integral, stderr
 
     # numpy version
-    def sample(self, eval_count) -> Sample:
+    def sample(self, sample_size, batch_size: Optional[int] = 10000) -> Sample:
         """Generate a sample of the target distribution.
 
         Parameters
         ----------
-        eval_count
-            Total number of function evaluations.
+        sample_size
+            The size of the sample to be generated.
+        batch_size
+            Number of proposals to be generated at once.
 
         Returns
         -------
@@ -142,7 +165,7 @@ class ImportanceMC(object):
             The generated sample.
         """
 
-        sample, _, _ = self.integrate(eval_count)
+        sample, _, _ = self.integrate(sample_size, batch_size)
         return sample
 
 class MultiChannelMC(object):
