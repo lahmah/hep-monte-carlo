@@ -16,7 +16,7 @@ class ImportanceMC(object):
     equivalent to plain MC.
     """
 
-    def __init__(self, dist: Distribution, name: str = "MC Importance") -> None:
+    def __init__(self, target: Distribution, dist: Distribution, name: str = "MC Importance") -> None:
         """
         Parameters
         ----------
@@ -28,8 +28,9 @@ class ImportanceMC(object):
         """
         self.method_name = name
 
+        self.target = target
+        self.ndim = target.ndim
         self.dist = dist
-        self.ndim = dist.ndim
 
     ## sequential version
     #def __call__(self, target, eval_count) -> Tuple[Sample, float, float]:
@@ -88,7 +89,7 @@ class ImportanceMC(object):
     #    return sample
 
     # numpy version
-    def integrate(self, target, eval_count) -> Tuple[Sample, float, float]:
+    def integrate(self, eval_count) -> Tuple[Sample, float, float]:
         """Approximate the integral of fn.
 
         Parameters
@@ -112,7 +113,7 @@ class ImportanceMC(object):
         while indices.size > 0:
             trials += indices.size
             x = self.dist.rvs(indices.size)
-            y = target.pdf(x)
+            y = self.target.pdf(x)
             in_bounds = y != 0.
             xs[indices[in_bounds]] = x[in_bounds]
             ys[indices[in_bounds]] = y[in_bounds]
@@ -121,9 +122,44 @@ class ImportanceMC(object):
         weights = ys / self.dist.pdf(xs)
         integral = eval_count/trials * weights.mean()
         stderr = np.sqrt(weights.var() * eval_count/trials**2)
-        sample = Sample(data=xs, target=target, pdf=ys, weights=weights)
+        sample = Sample(data=xs, target=self.target, pdf=ys, weights=weights)
 
         return sample, integral, stderr
+
+    # numpy version
+    def sample(self, eval_count) -> Sample:
+        """Approximate the integral of fn.
+
+        Parameters
+        ----------
+        eval_count
+            Total number of function evaluations.
+
+        Returns
+        -------
+        Tuple[Sample, float, float]
+            (sample, integral_estimate, error_estimate)
+        """
+        xs = np.empty((eval_count, self.ndim))
+        ys = np.empty(eval_count)
+        weights = np.empty(eval_count)
+        trials = 0
+
+        indices = np.arange(eval_count)
+        while indices.size > 0:
+            trials += indices.size
+            x = self.dist.rvs(indices.size)
+            y = self.target.pdf(x)
+            in_bounds = y != 0.
+            xs[indices[in_bounds]] = x[in_bounds]
+            ys[indices[in_bounds]] = y[in_bounds]
+            indices = indices[np.logical_not(in_bounds)]
+
+        print('Sampling efficiency:', eval_count/trials)
+        weights = ys / self.dist.pdf(xs)
+        sample = Sample(data=xs, target=self.target, pdf=ys, weights=weights)
+
+        return sample
 
 class MultiChannelMC(object):
 
