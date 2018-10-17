@@ -2,6 +2,7 @@ import sys
 import Sherpa
 from ..density import Density
 from ..util import interpret_array
+from ..sampling import Sample
 import pkg_resources
 import numpy as np
 from itertools import combinations
@@ -127,3 +128,59 @@ def export_hepmc(E_CM, sample, filename):
                 f.write("P %i %i %e %e %e %e 0 1 0 0 0 0\n" % (10003+j, pid, px, py, pz, E))
             
         f.write("HepMC::IO_GenEvent-END_EVENT_LISTING")
+
+def import_hepmc(filename):
+    with open(filename, "r") as f:
+        while f.readline() != "HepMC::IO_GenEvent-START_EVENT_LISTING\n":
+            pass
+
+        data = []
+        weights = []
+        line = f.readline()
+        while(True):
+            weight = float(line.split()[13])
+            weights.append(weight)
+            line = f.readline()
+            while not line.split()[0] == "P":
+                line = f.readline()
+            pin1 = line
+            pin2 = f.readline()
+
+            pout = []
+            pids = []
+            line = f.readline()
+            while line.split()[0] == "P":
+                pout.append(line.split()[3:7])
+                pids.append(int(line.split()[2]))
+                line = f.readline()
+
+            x = []
+            # order the particles by id
+            p = pout[pids.index(1)]
+            x.append(float(p[3]))
+            x.append(float(p[0]))
+            x.append(float(p[1]))
+            x.append(float(p[2]))
+            del pout[pids.index(1)]
+            del pids[pids.index(1)]
+            p = pout[pids.index(-1)]
+            x.append(float(p[3]))
+            x.append(float(p[0]))
+            x.append(float(p[1]))
+            x.append(float(p[2]))
+            del pout[pids.index(-1)]
+
+            for p in pout:
+                x.append(float(p[3]))
+                x.append(float(p[0]))
+                x.append(float(p[1]))
+                x.append(float(p[2]))
+
+            data.append(np.array(x))
+
+            if line == "HepMC::IO_GenEvent-END_EVENT_LISTING\n":
+                break
+
+    data = np.array(data)
+    weights = np.array(weights)
+    return Sample(data=data, weights=weights)
