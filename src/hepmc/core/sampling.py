@@ -274,9 +274,6 @@ class AcceptRejectSampler(object):
                 proposals = self.sampling_dist.rvs(batch_size)
                 aprob = self.target.pdf(proposals) / self.sampling_dist.pdf(proposals) / self.bound
                 u = np.random.rand(batch_size)
-                #accept = u < weights / self.bound
-                #n_accept = accept.sum()
-                #accepted = proposals[accept]
                 accept = np.where(u < aprob)[0]
                 n_accept = accept.size
                 if n_accept <= n_todo:
