@@ -119,6 +119,7 @@ class ImportanceMC(object):
             ys[indices[in_bounds]] = y[in_bounds]
             indices = indices[np.logical_not(in_bounds)]
 
+        print('Sampling efficiency:', eval_count/trials)
         weights = ys / self.dist.pdf(xs)
         integral = eval_count/trials * weights.mean()
         stderr = np.sqrt(weights.var() * eval_count/trials**2)
@@ -128,7 +129,7 @@ class ImportanceMC(object):
 
     # numpy version
     def sample(self, eval_count) -> Sample:
-        """Approximate the integral of fn.
+        """Generate a sample of the target distribution.
 
         Parameters
         ----------
@@ -137,28 +138,11 @@ class ImportanceMC(object):
 
         Returns
         -------
-        Tuple[Sample, float, float]
-            (sample, integral_estimate, error_estimate)
+        Sample
+            The generated sample.
         """
-        xs = np.empty((eval_count, self.ndim))
-        ys = np.empty(eval_count)
-        weights = np.empty(eval_count)
-        trials = 0
 
-        indices = np.arange(eval_count)
-        while indices.size > 0:
-            trials += indices.size
-            x = self.dist.rvs(indices.size)
-            y = self.target.pdf(x)
-            in_bounds = y != 0.
-            xs[indices[in_bounds]] = x[in_bounds]
-            ys[indices[in_bounds]] = y[in_bounds]
-            indices = indices[np.logical_not(in_bounds)]
-
-        print('Sampling efficiency:', eval_count/trials)
-        weights = ys / self.dist.pdf(xs)
-        sample = Sample(data=xs, target=self.target, pdf=ys, weights=weights)
-
+        sample, _, _ = self.integrate(eval_count)
         return sample
 
 class MultiChannelMC(object):
