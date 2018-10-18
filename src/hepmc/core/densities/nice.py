@@ -8,6 +8,7 @@ import tensorflow_probability as tfp
 tfd = tfp.distributions
 tfb = tfp.bijectors
 layers = tf.contrib.layers
+from tqdm import tqdm
 
 
 class Nice(Distribution):
@@ -54,14 +55,14 @@ class Nice(Distribution):
         self.sess.run(tf.global_variables_initializer())
 
         NUM_STEPS = int(train_iters)
-        global_step = []
         np_losses = []
-        for i in range(NUM_STEPS):
-            _, np_loss = self.sess.run([train_op, loss])
-            if i % 1000 == 0:
-                global_step.append(i)
-                np_losses.append(np_loss)
-                print(i, np_loss)
+        with tqdm(total=NUM_STEPS) as pbar:
+            for i in range(NUM_STEPS):
+                _, np_loss = self.sess.run([train_op, loss])
+                if (i+1) % 100 == 0:
+                    np_losses.append(np_loss)
+                    pbar.set_postfix(loss=np_loss)
+                    pbar.update(100)
         plt.plot(np_losses) # plot the training progress
 
     def pdf(self, xs):
