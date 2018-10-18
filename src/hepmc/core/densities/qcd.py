@@ -39,8 +39,10 @@ class ee_qq_ng(Density):
             self.Process.AddOutFlav(21)
         self.Process.Initialize()
 
-        self.Process.SetMomentum(0, E_CM/2., 0., 0., E_CM/2.)
-        self.Process.SetMomentum(1, E_CM/2., 0., 0., -E_CM/2.)
+        #self.Process.SetMomentum(0, E_CM/2., 0., 0., E_CM/2.)
+        #self.Process.SetMomentum(1, E_CM/2., 0., 0., -E_CM/2.)
+        self.pin1 = [E_CM/2., 0., 0., E_CM/2.]
+        self.pin2 = [E_CM/2., 0., 0., -E_CM/2.]
 
     # The first momentum is xs[0:4]
     # The second momentum is xs[4:8], ...
@@ -48,43 +50,49 @@ class ee_qq_ng(Density):
         xs = interpret_array(xs, self.ndim)
 
         ndim = xs.shape[1]
+        n_particles = ndim // 4
 
         if ndim != self.ndim:
             raise RuntimeWarning("Mismatching dimensions.")
 
         sample_size = len(xs)
-        me = np.empty(sample_size)
+        me = np.zeros(sample_size)
 
         cross_section = np.empty(xs.shape[0])
-        for i in range(sample_size):
-            momenta = []
-            for j in range(self.nfinal):
-                momenta.append(xs[i, 4*j:4*j+4])
+        for i in np.where(cut_pT(xs, self.pT_min) & cut_angle(xs, self.angle_min))[0]:
+            self.Process.SetMomenta([self.pin1, self.pin2] + [xs[i, j*4:j*4+4].tolist() for j in range(n_particles)])
+            me[i] = self.Process.CSMatrixElement()
 
-            # apply cuts
-            if all([pT(p)>self.pT_min for p in momenta]) and all([angle(p1, p2)>self.angle_min for p1, p2 in combinations(momenta, 2)]):
-                for j, momentum in enumerate(momenta):
-                    self.Process.SetMomentum(j+2, momentum[0], momentum[1], momentum[2], momentum[3])
-
-                me[i] = self.Process.CSMatrixElement()
-            else:
-                me[i] = 0.
-
-            cross_section = (2. * np.pi) ** (4.-3. * self.nfinal) / (2. * self.E_CM ** 2) * me
+        cross_section = (2. * np.pi) ** (4.-3. * self.nfinal) / (2. * self.E_CM ** 2) * me
 
         return self.conversion * cross_section
 
 def path_to_runcard(n_gluons):
     return pkg_resources.resource_filename('hepmc', 'data/ee_qq_' + str(n_gluons) + 'g.dat')
 
+def cut_pT(xs, pT_min):
+    n_particles = xs.shape[1] // 4
+    pass_cut_flags = np.all([pT(xs[:, i*4:i*4+4]) > pT_min for i in range(n_particles)], axis=0)
+    return pass_cut_flags
+
+def cut_angle(xs, angle_min):
+    n_particles = xs.shape[1] // 4
+    pass_cut_flags = np.all([angle(xs[:, i*4+1:i*4+4], xs[:, j*4+1:j*4+4]) > angle_min for i, j in combinations(range(n_particles), 2)], axis=0)
+    return pass_cut_flags
+
 # Calculate transverse momentum of 4-vector
 def pT(p):
-    return np.sqrt(p[1]*p[1]+p[2]*p[2])
+    return np.sqrt(p[:, 1]*p[:, 1]+p[:, 2]*p[:, 2])
+
+def unit_vector(v):
+    return v / np.linalg.norm(v, axis=1)[:, np.newaxis]
 
 # Calculate angle between two 4-vectors
 def angle(p, q):
-    cos_angle = (p[1:].dot(q[1:]))/(p[0]*q[0])
-    return np.arccos(cos_angle)
+    p_u = unit_vector(p)
+    q_u = unit_vector(q)
+    cos_angle = np.einsum('ij,ij->i', p_u, q_u)
+    return np.arccos(np.clip(cos_angle, -1., 1.))
 
 def export_hepmc(E_CM, sample, filename):
     n_out = int(sample.data.shape[1]/4)
