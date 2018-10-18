@@ -30,6 +30,10 @@ class Gaussian(Proposal):
         prob = multi_norm.pdf(candidate, state, self.cov)  # symmetric
         return prob
 
+    def proposal_mlogpdf(self, state, candidate):
+        prob = -multi_norm.logpdf(candidate, state, self.cov)  # symmetric
+        return prob
+
     @property
     def cov(self):
         return self._cov

@@ -1,55 +1,172 @@
 import numpy as np
-from .integration import IntegrationSample
+from typing import Tuple, Optional
+from tqdm import tqdm
+
+from ..util import online_variance, is_power_of_ten
+from ..density import Distribution
+from ..sampling import Sample
 
 
 class ImportanceMC(object):
+    """ Importance sampling Monte Carlo integration.
 
-    def __init__(self, dist, name="MC Importance"):
-        """ Importance sampling Monte Carlo integration.
+    Importance sampling replaces the uniform sample distribution of plain
+    Monte Carlo with a custom pdf.
 
-        Importance sampling replaces the uniform sample distribution of plain
-        Monte Carlo with a custom pdf.
+    By default a uniform probability distribution is used, making the method
+    equivalent to plain MC.
+    """
 
-        By default a uniform probability distribution is used, making the method
-        equivalent to plain MC.
-
-        Example:
-            >>> from hepmc import densities
-            >>> sampling = lambda size: np.random.rand(size)**2
-            >>> pdf = lambda x: 2*x
-            >>> dist = Density.make(ndim=1, pdf=pdf, rvs=sampling)
-            >>> mc_imp = ImportanceMC(1, dist)
-            >>> est, err = mc_imp(lambda x: x, 1000)
-            >>> est, err  # the pdf is ideal since fn(x)/(2*x) = 1/2 = const
-            (0.5, 0.0)
-
-        :param dist: Distribution to use for sampling.
-        :param name: Name of the method that can be used as label in
+    def __init__(self, target: Distribution, dist: Distribution, name: str = "MC Importance") -> None:
+        """
+        Parameters
+        ----------
+        target
+            The target distribution.
+        dist
+            Distribution to use for sampling.
+        name
+            Name of the method that can be used as label in
             plotting routines (can be changed to name parameters).
         """
         self.method_name = name
 
+        self.target = target
+        self.ndim = target.ndim
         self.dist = dist
-        self.ndim = dist.ndim
 
-    def __call__(self, fn, eval_count):
-        """ Approximate the integral of fn.
+    ## sequential version
+    #def __call__(self, target, eval_count) -> Tuple[Sample, float, float]:
+    #    """Approximate the integral of fn.
 
-        :param fn: Integrand, taking ndim numpy arrays and returning a number.
-        :param eval_count: Total number of function evaluations.
-        :return: Tuple (integral_estimate, error_estimate).
+    #    Parameters
+    #    ----------
+    #    fn
+    #        Integrand, taking ndim numpy arrays and returning a number.
+    #    eval_count
+    #        Total number of function evaluations.
+
+    #    Returns
+    #    -------
+    #    Tuple[Sample, float, float]
+    #        (sample, integral_estimate, error_estimate)
+    #    """
+    #    xs = np.empty((eval_count, self.ndim))
+    #    ys = np.empty(eval_count)
+    #    weights = np.empty(eval_count)
+
+    #    trials = 0
+    #    accepted = 0
+    #    var = online_variance()
+    #    skip = 1
+    #    for i in range(eval_count):
+    #        y = 0.
+    #        while y == 0.:
+    #            trials += 1
+    #            x = self.dist.rvs(1)
+    #            y = fn(x)
+    #        accepted += 1
+    #        xs[i] = x
+    #        ys[i] = y
+    #        weights[i] = y/self.dist.pdf(x)
+    #        var.add_variable(weights[i])
+
+    #        n = i+1
+    #        if n % skip == 0:
+    #            if n == 1:
+    #                print("Event 1\t(avg. trials per event: %f)" % trials)
+    #            else:
+    #                integral = accepted/trials * var.get_mean()
+    #                stderr = np.sqrt(var.get_variance() * accepted/trials**2)
+    #                percentage = stderr/integral*100
+    #                print("Event %i\t(avg. trials per event: %f)\tXS = %f pb +- ( %f pb = %f %%)" % (n, trials/accepted, integral, stderr, percentage))
+    #            if is_power_of_ten(n):
+    #                skip *= 10
+
+    #    sample = IntegrationSample(data=xs, function_values=ys, weights=weights)
+
+    #    # integral estimate
+    #    sample.integral = integral
+    #    # variance of the weighted function samples
+    #    sample.integral_err = stderr
+    #    return sample
+
+    # numpy version
+    def integrate(self, sample_size, batch_size: Optional[int] = 10000) -> Tuple[Sample, float, float]:
+        """Approximate the integral of the target distribution.
+
+        Parameters
+        ----------
+        sample_size
+            The size of the sample to be generated.
+        batch_size
+            Number of proposals to be generated at once.
+
+        Returns
+        -------
+        Tuple[Sample, float, float]
+            (sample, integral_estimate, error_estimate)
         """
-        xs = self.dist.rvs(eval_count)
-        ys = fn(*xs.transpose())
-        weights = self.dist.pdf(xs)
-        sample = IntegrationSample(data=xs, function_values=ys, weights=weights)
+        xs = np.empty((sample_size, self.ndim))
+        ys = np.empty(sample_size)
 
-        # integral estimate
-        sample.integral = np.mean(ys / weights)
-        # variance of the weighted function samples
-        sample.integral_err = np.sqrt(np.var(ys / weights) / eval_count)
+        n_todo = sample_size
+        trials = 0
+        #indices = np.arange(eval_count)
+        #while indices.size > 0:
+        with tqdm(total=sample_size) as pbar:
+            while n_todo > 0:
+                #trials += indices.size
+                #x = self.dist.rvs(indices.size)
+                x = self.dist.rvs(batch_size)
+                y = self.target.pdf(x)
+                #in_bounds = y != 0.
+                in_bounds = np.where(y != 0.)[0]
+                n_accept = in_bounds.size
+                #xs[indices[in_bounds]] = x[in_bounds]
+                #ys[indices[in_bounds]] = y[in_bounds]
+                #indices = indices[np.logical_not(in_bounds)]
+                if n_accept <= n_todo:
+                    xs[sample_size-n_todo:sample_size-n_todo+n_accept] = x[in_bounds]
+                    ys[sample_size-n_todo:sample_size-n_todo+n_accept] = y[in_bounds]
+                    trials += batch_size
+                else:
+                    n_accept = n_todo
+                    in_bounds = in_bounds[:n_todo]
+                    xs[sample_size-n_todo:] = x[in_bounds]
+                    ys[sample_size-n_todo:] = y[in_bounds]
+                    last_index = in_bounds[-1]
+                    trials += last_index + 1
+                n_todo -= n_accept
+                pbar.update(n_accept)
+
+        print('Sampling efficiency:', sample_size/trials)
+        weights = ys / self.dist.pdf(xs)
+        integral = sample_size/trials * weights.mean()
+        stderr = np.sqrt(weights.var() * sample_size/trials**2)
+        sample = Sample(data=xs, target=self.target, pdf=ys, weights=weights)
+
+        return sample, integral, stderr
+
+    # numpy version
+    def sample(self, sample_size, batch_size: Optional[int] = 10000) -> Sample:
+        """Generate a sample of the target distribution.
+
+        Parameters
+        ----------
+        sample_size
+            The size of the sample to be generated.
+        batch_size
+            Number of proposals to be generated at once.
+
+        Returns
+        -------
+        Sample
+            The generated sample.
+        """
+
+        sample, _, _ = self.integrate(sample_size, batch_size)
         return sample
-
 
 class MultiChannelMC(object):
 

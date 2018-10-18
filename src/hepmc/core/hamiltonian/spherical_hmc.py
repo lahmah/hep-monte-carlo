@@ -1,21 +1,24 @@
 import numpy as np
+from collections import deque
 from .hmc import HamiltonianUpdate, HamiltonState
-from ..core.densities import Gaussian
+from ..densities.gaussian import Gaussian
+from ..sampling import Sample
+from ..util import is_power_of_ten
 
 
 class SphericalHMCState(HamiltonState):
 
-    @staticmethod
-    def tag_parser(chain, log_weights):
-        log_weights = np.asanyarray(log_weights)
-        weights = np.exp(log_weights - log_weights.mean())
-        weights /= weights.sum()
-        count = len(chain)
-        sub = np.random.choice(np.arange(count), count,
-                               replace=True, p=weights)
-        return chain[sub]
+    #@staticmethod
+    #def tag_parser(chain, log_weights):
+    #    log_weights = np.asanyarray(log_weights)
+    #    weights = np.exp(log_weights - log_weights.mean())
+    #    weights /= weights.sum()
+    #    count = len(chain)
+    #    sub = np.random.choice(np.arange(count), count,
+    #                           replace=True, p=weights)
+    #    return chain[sub]
 
-    def __new__(cls, input_array, theta=None, tag=None, pot_gradient=None,
+    def __new__(cls, input_array, theta=None, tag=None, pot_gradient=None, weight=None,
                 **kwargs):
         obj = super().__new__(cls, input_array, **kwargs)
         if theta is not None:
@@ -23,6 +26,7 @@ class SphericalHMCState(HamiltonState):
         obj.tag = tag  # tag is reset
         if pot_gradient is not None:
             obj.pot_gradient = pot_gradient
+        obj.weight = weight
         return obj
 
     def __array_finalize__(self, obj):
@@ -45,10 +49,9 @@ def arccot(x):
     return np.pi/2 - np.arctan(x)
 
 
-def integrator(q, pot_gradient, z, du, trafo, jac, stepsize, nsteps):
+def integrator(q, pot_gradient, v, du, trafo, jac, stepsize, nsteps):
     cumsinq = np.cumprod(np.sin(q))
-    v = z / np.concatenate(([1], cumsinq[:-1]))
-    
+
     # make a half step for velocity
     v = v - stepsize/2 * du/np.concatenate(([1], cumsinq[:-1]**2))
     
@@ -81,10 +84,7 @@ def integrator(q, pot_gradient, z, du, trafo, jac, stepsize, nsteps):
         if l != nsteps-1:
             v = v - stepsize * du/np.concatenate(([1], cumsinq[:-1]**2))
     
-    z = (v*np.concatenate(([1], cumsinq[:-1])) -
-         stepsize/2 * du/np.concatenate(([1], cumsinq[:-1])))
-    
-    return q, z, du
+    return q, v, du
 
 
 class StaticSphericalHMC(HamiltonianUpdate):
@@ -103,9 +103,9 @@ class StaticSphericalHMC(HamiltonianUpdate):
 
         # default limits: unit hypercube
         if lim_lower is None:
-            lim_lower = np.zeros(self.ndim)
+            lim_lower = np.zeros(self.target_density.ndim)
         if lim_upper is None:
-            lim_upper = np.ones(self.ndim)
+            lim_upper = np.ones(self.target_density.ndim)
 
         self.stepsize_min = stepsize_min
         self.stepsize_max = stepsize_max
@@ -115,7 +115,7 @@ class StaticSphericalHMC(HamiltonianUpdate):
         self.lim_upper = lim_upper
         
         self.J_xtheta = (self.lim_upper-self.lim_lower)/(np.concatenate(
-            (np.full(self.ndim-1, 1), [2]))*np.pi)
+            (np.full(self.target_density.ndim-1, 1), [2]))*np.pi)
 
     def theta_to_x(self, theta):
         return self.lim_lower + theta*self.J_xtheta
@@ -132,10 +132,13 @@ class StaticSphericalHMC(HamiltonianUpdate):
             state.tag = self.log_weight(state.theta)
         if state.pot_gradient is None:
             state.pot_gradient = self.target_density.pot_gradient(state)[0]
+        if state.weight is None:
+            state.weight = np.exp(self.log_weight(state.theta))
 
         return super().init_state(state)
     
     def proposal(self, current):
+        """Propose a new state in the spherical domain."""
         # initialization
         try:
             q = current.theta
@@ -147,6 +150,12 @@ class StaticSphericalHMC(HamiltonianUpdate):
 
         # sample velocity
         z = current.momentum = self.p_dist.proposal()
+        cumsinq = np.cumprod(np.sin(q))
+        v = z / np.concatenate(([1], cumsinq[:-1]))
+
+        ## evaluate potential and kinetic energy at current state
+        #U = self.target_density.pot(current)
+        #H_current = U + .5*z.dot(z)
         
         # sample integrator parameters
         nsteps = np.random.randint(self.nsteps_min, self.nsteps_max + 1)
@@ -154,18 +163,148 @@ class StaticSphericalHMC(HamiltonianUpdate):
                     self.stepsize_min)
         
         # integrate
-        q, z, du = integrator(q, self.target_density.pot_gradient, z, du,
+        q, v, du = integrator(q, self.target_density.pot_gradient, v, du,
                               self.theta_to_x, self.J_xtheta, stepsize, nsteps)
 
+        z = (v*np.concatenate(([1], cumsinq[:-1])) -
+             stepsize/2 * du/np.concatenate(([1], cumsinq[:-1])))
+    
+        ## evaluate potential and kinetic energy at current state
+        #U = self.target_density.pot(q)
+        #H_proposal = U + .5*z.dot(z)
+        
         x = self.theta_to_x(q)
-        prob = self.target_density.pdf(x)
-        return SphericalHMCState(x, momentum=z, tag=self.log_weight(q),
-                                 pot_gradient=du, pdf=prob, theta=q)
+        pot = self.target_density.pot(x)
+        #return SphericalHMCState(x, momentum=z, tag=self.log_weight(q),
+        #                         pot_gradient=du, pdf=prob, theta=q)
+        return SphericalHMCState(x, momentum=z, pot_gradient=du, pot=pot, theta=q)
+
+    def accept(self, state, candidate):
+        """Return the logarithm of the acceptance probability."""
+        try:
+            #prob = (candidate.pdf * self.p_dist.pdf(candidate.momentum) /
+            #        state.pdf / self.p_dist.pdf(state.momentum))
+            U_current = self.target_density.pot(state)
+            #if np.isinf(U_current): # shouldn't be necessary
+            #    return 0
+            H_current = U_current + .5*state.momentum.dot(state.momentum)
+            U_proposal = self.target_density.pot(candidate)
+            if np.isinf(U_proposal):
+                return -np.inf
+            H_proposal = U_proposal + .5*candidate.momentum.dot(candidate.momentum)
+            log_prob = -H_proposal + H_current
+            if np.isinf(log_prob): # shouldn't be necessary
+                return -np.inf
+            return log_prob
+        except RuntimeWarning:
+            return -np.inf
+
+    def next_state(self, state, iteration):
+        candidate = self.proposal(state)
+
+        try:
+            log_accept = self.accept(state, candidate)
+        except (TypeError, AttributeError):
+            # in situations like mixing/composite updates, previous update
+            # may not have set necessary attributes (such as pdf)
+            state = self.init_state(state)
+            log_accept = self.accept(state, candidate)
+
+        #if not np.isinf(log_accept) and np.log(np.random.rand()) < min(0, log_accept):
+        if np.log(np.random.rand()) < log_accept:
+            next_state = candidate
+        else:
+            next_state = state
+
+        # give the state a weight
+        # we have to transform out of log space here in order to be compatible with
+        # mixing updates
+        next_state.weight = np.exp(self.log_weight(next_state.theta))
+        #next_state.log_weight = self.log_weight(next_state.theta)
+
+        if self.is_adaptive:
+            self.adapt(iteration, state, next_state, log_accept)
+
+        return next_state
 
     def log_weight(self, q):
-        log_weight = (np.arange(1, self.ndim) - self.ndim).dot(
+        log_weight = (np.arange(1, self.target_density.ndim) - self.target_density.ndim).dot(
             np.log(np.sin(q[:-1]))) + np.sum(np.log(self.J_xtheta))
         return log_weight
+
+    def sample(self, sample_size, initial, out_mask=None, n_batches=20):
+        """
+        Return a weighted sample. To get an unweighted sample it has 
+        to be resampled using np.random.choice()
+        """
+
+        # initialize sampling
+        state = self.init_state(np.atleast_1d(initial))
+        if len(state) != self.target_density.ndim:
+            raise ValueError('initial must have dimension ' + str(self.target_density.ndim))
+        self.init_adapt(state)  # initial adaptation
+
+        batch_length = int(sample_size/n_batches)
+
+        tags = dict()
+        tagged = dict()
+
+        chain = np.empty((sample_size, self.target_density.ndim))
+        chain[0] = state
+        #log_weights = np.empty(sample_size)
+        #log_weights[0] = self.log_weight(state)
+        weights = np.empty(sample_size)
+        weights[0] = state.weight
+
+        batch_accept = deque(maxlen=batch_length)
+        current_seq = 1 # current sequence length
+        max_seq = 1 # maximal sequence length
+        skip = 1
+        for i in range(1, sample_size):
+            state = self.next_state(state, i)
+            if not np.array_equal(state, chain[i - 1]):
+                batch_accept.append(1)
+                if current_seq > max_seq:
+                    max_seq = current_seq
+                current_seq = 1
+            else:
+                batch_accept.append(0)
+                current_seq += 1
+
+            chain[i] = state
+            #log_weights[i] = state.log_weight
+            weights[i] = state.weight
+            try:
+                try:
+                    tags[state.tag_parser].append(state.tag)
+                    tagged[state.tag_parser].append(i)
+                except KeyError:
+                    tags[state.tag_parser] = []
+                    tagged[state.tag_parser] = []
+            except AttributeError:
+                pass
+
+            if i % skip == 0:
+                if i >= batch_length:
+                    accept_rate = sum(batch_accept)/batch_length
+                else:
+                    accept_rate = sum(batch_accept)/i
+                if i == 1:
+                    print("Event 1\t(batch acceptance rate: %f)" % (accept_rate))
+                else:
+                    print("Event %i\t(batch acceptance rate: %f)\tmax sequence length: %i" % (i, accept_rate, max(current_seq, max_seq)))
+                if is_power_of_ten(i):
+                    skip *= 10
+
+        if out_mask is not None:
+            chain = chain[:, out_mask]
+
+        for parser in tagged:
+            chain[tagged[parser]] = parser(chain[tagged[parser]], tags[parser])
+
+        #weights = np.exp(log_weights - np.median(log_weights))
+        sample = Sample(data=chain, target=self.target_density, weights=weights)
+        return sample
 
 
 class DualAveragingSphericalHMC(StaticSphericalHMC):
@@ -227,10 +366,11 @@ class DualAveragingSphericalHMC(StaticSphericalHMC):
         E_prp = proposal_u + .5*np.sum(proposal_z**2)
 
         # aprob = np.exp(-E_cur + E_prp)
-        aprob = DualAveragingSphericalHMC.accept(
-            self,
-            SphericalHMCState(None, momentum=current_z, pdf=self.target_density.pdf(current)),
-            SphericalHMCState(None, momentum=proposal_z, pdf=self.target_density.pdf(self.theta_to_x(proposal_q))))
+        #aprob = DualAveragingSphericalHMC.accept(
+        #    self,
+        #    SphericalHMCState(None, momentum=current_z, pdf=self.target_density.pdf(current)),
+        #    SphericalHMCState(None, momentum=proposal_z, pdf=self.target_density.pdf(self.theta_to_x(proposal_q))))
+        aprob = np.exp(-E_prp+E_cur)
         # print('aprob:', aprob)
             
         a = 2. * (aprob > 0.5) - 1.
@@ -243,14 +383,14 @@ class DualAveragingSphericalHMC(StaticSphericalHMC):
                 proposal_du, self.theta_to_x, self.J_xtheta, stepsize, nsteps=1)
             proposal_u = self.target_density.pot(self.theta_to_x(proposal_q))
             E_prp = proposal_u + .5*np.sum(proposal_z**2)
-            # aprob = np.exp(-E_cur + E_prp)
-            aprob = DualAveragingSphericalHMC.accept(
-                self,
-                SphericalHMCState(None, momentum=current_z,
-                                  pdf=self.target_density.pdf(current)),
-                SphericalHMCState(None, momentum=proposal_z,
-                                  pdf=self.target_density.pdf(
-                                      self.theta_to_x(proposal_q))))
+            aprob = np.exp(-E_cur + E_prp)
+            #aprob = DualAveragingSphericalHMC.accept(
+            #    self,
+            #    SphericalHMCState(None, momentum=current_z,
+            #                      pdf=self.target_density.pdf(current)),
+            #    SphericalHMCState(None, momentum=proposal_z,
+            #                      pdf=self.target_density.pdf(
+            #                          self.theta_to_x(proposal_q))))
 
             # print('aprob:', aprob)
 
@@ -258,7 +398,8 @@ class DualAveragingSphericalHMC(StaticSphericalHMC):
         min_stepsize = 1e-3
         return max(stepsize, min_stepsize)
     
-    def adapt(self, iteration, prev, current, accept):
+    def adapt(self, iteration, prev, current, log_accept):
+        accept = np.exp(log_accept)
         if self.adapt_schedule(iteration) is True:
             self.Hbar = (1 - 1 / (iteration + self.t0)) * \
                         self.Hbar + 1 / (iteration + self.t0) * \

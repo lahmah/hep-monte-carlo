@@ -2,33 +2,29 @@ import numpy as np
 
 from ..density import Density
 from .base import MarkovUpdate
-from ..densities import Uniform
+from ..proposals import Gaussian
 
 
 class MetropolisState(np.ndarray):
-    def __new__(cls, input_array, pdf=None):
+    def __new__(cls, input_array, pot=None):
         obj = np.array(input_array, copy=False, subok=True, ndmin=1).view(cls)
-        if pdf is not None:
-            obj.pdf = pdf
+        if pot is not None:
+            obj.pot = pot
         return obj
 
     def __array_finalize__(self, obj):
         if obj is None:
             return  # was called from the __new__ above
-        self.pdf = getattr(obj, 'pdf', None)
+        self.pot = getattr(obj, 'pot', None)
 
 
 # METROPOLIS (HASTING) UPDATE
 class MetropolisUpdate(MarkovUpdate):
 
-    def __init__(self, ndim, target, adaptive=False, hasting=False):
+    def __init__(self, target, adaptive=False, hasting=False):
         """ Generic abstract class to represent a single Metropolis-like update.
         """
-        super().__init__(ndim, is_adaptive=adaptive, target=target)
-        if isinstance(target, Density):
-            self.pdf = target.pdf
-        else:
-            self.pdf = target
+        super().__init__(target, is_adaptive=adaptive)
         self.is_hasting = hasting
 
     def adapt(self, iteration, prev, state, accept):
@@ -43,11 +39,10 @@ class MetropolisUpdate(MarkovUpdate):
             previous state in the Markov chain.
         """
         if self.is_hasting:
-            return (candidate.pdf * self.proposal_pdf(candidate, state) /
-                    state.pdf / self.proposal_pdf(state, candidate))
+            return state.pot + self.proposal_mlogpdf(state, candidate) - candidate.pot - self.proposal_mlogpdf(candidate, state)
         else:
             # otherwise (simpler) Metropolis update
-            return candidate.pdf / state.pdf
+            return state.pot - candidate.pot
 
     def proposal(self, state):
         """ A proposal generator.
@@ -65,11 +60,14 @@ class MetropolisUpdate(MarkovUpdate):
     def proposal_pdf(self, state, candidate):
         pass  # Implement for Hasting update.
 
+    def proposal_mlogpdf(self, state, candidate):
+        pass  # Implement for Hasting update.
+
     def init_state(self, state):
         if not isinstance(state, MetropolisState):
             state = MetropolisState(state)
-        if state.pdf is None:
-            state.pdf = self.pdf(state)
+        if state.pot is None:
+            state.pot = self.target.pot(state)
 
         return super().init_state(state)
 
@@ -84,7 +82,7 @@ class MetropolisUpdate(MarkovUpdate):
             state = self.init_state(state)
             accept = self.accept(state, candidate)
 
-        if accept >= 1 or np.random.rand() < accept:
+        if np.log(np.random.rand()) < accept:
             next_state = candidate
         else:
             next_state = state
@@ -97,7 +95,7 @@ class MetropolisUpdate(MarkovUpdate):
 
 class DefaultMetropolis(MetropolisUpdate):
 
-    def __init__(self, ndim, target, proposal=None, adaptive=False):
+    def __init__(self, target, proposal=None, cov=None, adaptive=False):
         """ Use the Metropolis algorithm to generate a sample.
 
         Example:
@@ -112,16 +110,21 @@ class DefaultMetropolis(MetropolisUpdate):
         :param proposal: A Proposal object.
         """
         if proposal is None:
-            proposal = Uniform(ndim)
+            proposal = Gaussian(target.ndim, cov)
         self._proposal = proposal
 
         # must be at the and since it calls proposal_pdf to see if it works
-        super().__init__(ndim, target,
+        super().__init__(target,
                          adaptive=adaptive, hasting=not proposal.is_symmetric)
 
     def proposal(self, state):
-        candidate = self._proposal.proposal(np.asarray(state))
-        return MetropolisState(candidate, self.pdf(candidate))
+        #candidate = self._proposal.proposal(np.asarray(state))
+        candidate = self._proposal.proposal(state)
+        return MetropolisState(candidate, self.target.pot(candidate))
 
     def proposal_pdf(self, state, candidate):
         return self._proposal.proposal_pdf(state, candidate)
+
+    # minus log pdf
+    def proposal_mlogpdf(self, state, candidate):
+        return self._proposal.proposal_mlogpdf(state, candidate)

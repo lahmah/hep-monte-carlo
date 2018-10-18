@@ -24,23 +24,58 @@ class incremental_variance:
 	def get_variance(self):
 		return (self.Ex2 - (self.Ex*self.Ex)/self.n) / (self.n-1)
 
-# numerically stable online calculation of variance
-# (Welford's algorithm)
 class online_variance:
-    def __init__(self):
+    """Numerically stable online calculation of variance.
+
+    Based on Welford's algorithm.
+
+    Attributes
+    ----------
+    self.n : int
+        Number of entries.
+    self.mean : float
+        Mean of all entries.
+    self.M2 : float
+        Variable used to calculate the variance.
+    
+    .. todo::
+        Use hidden attributes and make actual getters.
+    """
+    def __init__(self) -> None:
         self.n = 0
         self.mean = 0.
         self.M2 = 0.
 
-    def add_variable(self,x):
+    def add_variable(self, x: float) -> None:
+        """Add an entry.
+
+        Parameters
+        ----------
+        x
+            The entry to add.
+        """
         self.n += 1
         delta = x-self.mean
         self.mean += delta/self.n
         delta2 = x - self.mean
         self.M2 += delta*delta2
 
-    def get_mean(self):
+    def get_mean(self) -> float:
+        """Get the mean of all entries.
+        
+        Returns
+        -------
+        float
+            The mean of all entries.
+        """
         return self.mean
 
-    def get_variance(self):
+    def get_variance(self) -> float:
+        """Get the variance of all entries.
+
+        Returns
+        -------
+        float
+            The variance of all entries.
+        """
         return self.M2/(self.n-1)

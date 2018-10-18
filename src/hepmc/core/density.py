@@ -19,6 +19,9 @@ class Proposal(_AnyDensity):
     def proposal_pdf(self, state, candidate):
         return None  # may return None if is_symmetric == True
 
+    def proposal_mlogpdf(self, state, candidate):
+        return None  # may return None if is_symmetric == True
+
     @classmethod
     def make(cls, proposal, ndim=None, proposal_pdf=None, symmetric=None):
         if isinstance(proposal, Proposal):

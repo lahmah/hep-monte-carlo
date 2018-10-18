@@ -1,6 +1,6 @@
 import numpy as np
 from .metropolis import DefaultMetropolis
-
+from ..density import Density
 
 class StochasticOptimizeUpdate(DefaultMetropolis):
     """
@@ -43,12 +43,12 @@ class StochasticOptimizeUpdate(DefaultMetropolis):
 
 class AdaptiveMetropolisUpdate(DefaultMetropolis):
     """
-    adaptive Metropolis-Hastings sampler according to Haario (2001)
+    Adaptive Metropolis-Hastings sampler according to Haario et al. (2001)
     """
 
-    def __init__(self, ndim, target, proposal,
-                 t_initial, adapt_schedule):
-        super().__init__(ndim, target, proposal)
+    def __init__(self, target: Density, proposal: Density,
+            t_initial: int, adapt_schedule) -> None:
+        super().__init__(target, proposal)
         self.is_adaptive = True
 
         try:
@@ -59,14 +59,15 @@ class AdaptiveMetropolisUpdate(DefaultMetropolis):
 
         self.t_initial = t_initial
         self.adapt_schedule = adapt_schedule
-        self.s_d = 2.4 ** 2 / self.ndim
+        self.s_d = 2.4 ** 2 / self.target.ndim
         self.epsilon = 1e-6
         
         self.mean = None
         self.mean_previous = None
         self.cov = self._proposal.cov
     
-    def adapt(self, t, prev, current, accept):
+    def adapt(self, t: int, prev, current, accept: float) -> None:
+        """Adapt the proposal."""
         if not type(current) is np.ndarray:
             current = np.array(current)
         if t == 1:
