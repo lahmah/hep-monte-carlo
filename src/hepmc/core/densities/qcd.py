@@ -59,25 +59,37 @@ class ee_qq_ng(Density):
             raise RuntimeWarning("Mismatching dimensions.")
 
         sample_size = len(xs)
-        me = np.ctypeslib.as_ctypes(np.zeros(sample_size))
-        shared_array = RawArray(me._type_, me)
+
+        self.shared_array = RawArray('d', sample_size)
+        me = np.frombuffer(self.shared_array, dtype=np.float64)
+        np.copyto(me, np.zeros(sample_size, dtype=np.float64))
+
+        if sample_size >= 100:
+            n_proc = 4
+        else:
+            n_proc = 1
+
+        n_per_proc = n_proc*[sample_size // n_proc]
+        remainder = sample_size % n_proc
+        n_per_proc[-1] += remainder
 
         jobs = []
-        for i in range(4):
-            p = multiprocessing.Process(target=self.get_me, args=(i, xs[i*sample_size//4:(i+1)*sample_size//4], shared_array))
+        start_idx = 0
+        for i in range(n_proc):
+            end_idx = start_idx + n_per_proc[i]
+            p = multiprocessing.Process(target=self.get_me, args=(i, xs[start_idx:end_idx], start_idx))
             jobs.append(p)
             p.start()
+            start_idx = end_idx
 
         for p in jobs:
             p.join()
-
-        me = np.ctypeslib.as_array(shared_array)
 
         cross_section = (2. * np.pi) ** (4.-3. * self.nfinal) / (2. * self.E_CM ** 2) * me
 
         return self.conversion * cross_section
 
-    def get_me(self, procnum, xs, shared_array):
+    def get_me(self, procnum, xs, start_idx):
         Generator = PickalableSherpa()
         Generator.InitializeTheRun(4,
                                     [''.encode('ascii'),
@@ -98,10 +110,10 @@ class ee_qq_ng(Density):
         ndim = xs.shape[1]
         n_particles = ndim // 4
         sample_size = len(xs)
-        me = np.ctypeslib.as_array(shared_array)
+        me = np.frombuffer(self.shared_array, dtype=np.float64)
         for i in np.where(cut_pT(xs, self.pT_min) & cut_angle(xs, self.angle_min))[0]:
             Process.SetMomenta([self.pin1, self.pin2] + [xs[i, j*4:j*4+4].tolist() for j in range(n_particles)])
-            me[procnum*sample_size+i] = Process.CSMatrixElement()
+            me[start_idx+i] = Process.CSMatrixElement()
 
 def path_to_runcard(n_gluons):
     return pkg_resources.resource_filename('hepmc', 'data/ee_qq_' + str(n_gluons) + 'g.dat')
