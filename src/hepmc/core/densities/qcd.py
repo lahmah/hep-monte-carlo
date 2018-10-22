@@ -10,7 +10,9 @@ import os
 import multiprocessing
 from multiprocessing.sharedctypes import RawArray
 
-class PickalableSWIG:
+# We need these classes for pickle to work with SWIG. Pickle is 
+# used by multiprocessing.
+class PickleableSWIG:
 
     def __setstate__(self, state):
         self.__init__(*state['args'])
@@ -18,13 +20,13 @@ class PickalableSWIG:
     def __getstate__(self):
         return {'args': self.args}
 
-class PickalableSherpa(Sherpa, PickalableSWIG):
+class PickleableSherpa(Sherpa, PickleableSWIG):
 
     def __init__(self, *args):
         self.args = args
         Sherpa.__init__(self)
 
-class PickalableMEProcess(MEProcess, PickalableSWIG):
+class PickleableMEProcess(MEProcess, PickleableSWIG):
 
     def __init__(self, *args):
         self.args = args
@@ -47,56 +49,45 @@ class ee_qq_ng(Density):
         self.pin1 = [E_CM/2., 0., 0., E_CM/2.]
         self.pin2 = [E_CM/2., 0., 0., -E_CM/2.]
 
+        self.pool = multiprocessing.Pool(initializer=self.init_worker)
+
+    def __getstate__(self):
+        """Remove the pool instance from the __dict__ so that it
+        won't be pickled.
+        """
+        self_dict = self.__dict__.copy()
+        del self_dict['pool']
+        return self_dict
+
     # The first momentum is xs[0:4]
     # The second momentum is xs[4:8], ...
     def pdf(self, xs):
         xs = interpret_array(xs, self.ndim)
 
         ndim = xs.shape[1]
-        n_particles = ndim // 4
 
         if ndim != self.ndim:
             raise RuntimeWarning("Mismatching dimensions.")
 
         sample_size = len(xs)
 
-        self.shared_array = RawArray('d', sample_size)
-        me = np.frombuffer(self.shared_array, dtype=np.float64)
-        np.copyto(me, np.zeros(sample_size, dtype=np.float64))
-
-        if sample_size >= 100:
-            n_proc = 4
-        else:
-            n_proc = 1
-
-        n_per_proc = n_proc*[sample_size // n_proc]
-        remainder = sample_size % n_proc
-        n_per_proc[-1] += remainder
-
-        jobs = []
-        start_idx = 0
-        for i in range(n_proc):
-            end_idx = start_idx + n_per_proc[i]
-            p = multiprocessing.Process(target=self.get_me, args=(i, xs[start_idx:end_idx], start_idx))
-            jobs.append(p)
-            p.start()
-            start_idx = end_idx
-
-        for p in jobs:
-            p.join()
+        me = np.zeros(sample_size)
+        pass_cut_idx = np.where(cut_pT(xs, self.pT_min) & cut_angle(xs, self.angle_min))
+        me[pass_cut_idx] = self.pool.map(self.get_me, xs[pass_cut_idx], chunksize=100)
 
         cross_section = (2. * np.pi) ** (4.-3. * self.nfinal) / (2. * self.E_CM ** 2) * me
 
         return self.conversion * cross_section
 
-    def get_me(self, procnum, xs, start_idx):
-        Generator = PickalableSherpa()
+    def init_worker(self):
+        global Process
+        Generator = PickleableSherpa()
         Generator.InitializeTheRun(4,
                                     [''.encode('ascii'),
                                      ('RUNDATA=' + path_to_runcard(self.n_gluons)).encode('ascii'),
                                      'INIT_ONLY=2'.encode('ascii'),
                                      'OUTPUT=0'.encode('ascii')])
-        Process = PickalableMEProcess(Generator)
+        Process = PickleableMEProcess(Generator)
 
         # Incoming flavors must be added first!
         Process.AddInFlav(11)
@@ -107,13 +98,9 @@ class ee_qq_ng(Density):
             Process.AddOutFlav(21)
         Process.Initialize()
 
-        ndim = xs.shape[1]
-        n_particles = ndim // 4
-        sample_size = len(xs)
-        me = np.frombuffer(self.shared_array, dtype=np.float64)
-        for i in np.where(cut_pT(xs, self.pT_min) & cut_angle(xs, self.angle_min))[0]:
-            Process.SetMomenta([self.pin1, self.pin2] + [xs[i, j*4:j*4+4].tolist() for j in range(n_particles)])
-            me[start_idx+i] = Process.CSMatrixElement()
+    def get_me(self, x):
+        Process.SetMomenta([self.pin1, self.pin2] + [x[j*4:j*4+4].tolist() for j in range(self.nfinal)])
+        return Process.CSMatrixElement()
 
 def path_to_runcard(n_gluons):
     return pkg_resources.resource_filename('hepmc', 'data/ee_qq_' + str(n_gluons) + 'g.dat')
