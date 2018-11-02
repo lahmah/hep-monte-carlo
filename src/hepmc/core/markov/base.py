@@ -208,7 +208,7 @@ class CompositeMarkovUpdate(MarkovUpdate):
 
 class MixingMarkovUpdate(MarkovUpdate):
 
-    def __init__(self, ndim, updates, weights=None, masks=None,
+    def __init__(self, updates, weights=None, masks=None,
                  in_maps=None, out_maps=None, target=None):
         """ Mix a number of update mechanisms, choosing one in each step.
 
@@ -224,7 +224,6 @@ class MixingMarkovUpdate(MarkovUpdate):
                     target = update.target
                     break
         super().__init__(is_adaptive=is_adaptive, target=target)
-        self.ndim = ndim
 
         self.updates = updates
         self.updates_count = len(updates)
