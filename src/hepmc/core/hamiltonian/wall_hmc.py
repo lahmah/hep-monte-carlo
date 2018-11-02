@@ -149,69 +149,69 @@ class WallHMC(HamiltonianUpdate):
 
         return next_state
 
-    def sample(self, sample_size, initial, out_mask=None, n_batches=20):
-        """
-        Return a weighted sample. To get an unweighted sample it has 
-        to be resampled using np.random.choice()
-        """
+    #def sample(self, sample_size, initial, out_mask=None, n_batches=20):
+    #    """
+    #    Return a weighted sample. To get an unweighted sample it has 
+    #    to be resampled using np.random.choice()
+    #    """
 
-        # initialize sampling
-        state = self.init_state(np.atleast_1d(initial))
-        if len(state) != self.target_density.ndim:
-            raise ValueError('initial must have dimension ' + str(self.target_density.ndim))
-        self.init_adapt(state)  # initial adaptation
+    #    # initialize sampling
+    #    state = self.init_state(np.atleast_1d(initial))
+    #    if len(state) != self.target_density.ndim:
+    #        raise ValueError('initial must have dimension ' + str(self.target_density.ndim))
+    #    self.init_adapt(state)  # initial adaptation
 
-        batch_length = int(sample_size/n_batches)
+    #    batch_length = int(sample_size/n_batches)
 
-        tags = dict()
-        tagged = dict()
+    #    tags = dict()
+    #    tagged = dict()
 
-        chain = np.empty((sample_size, self.target_density.ndim))
-        chain[0] = state
+    #    chain = np.empty((sample_size, self.target_density.ndim))
+    #    chain[0] = state
 
-        batch_accept = deque(maxlen=batch_length)
-        current_seq = 1 # current sequence length
-        max_seq = 1 # maximal sequence length
-        skip = 1
-        for i in range(1, sample_size):
-            state = self.next_state(state, i)
-            if not np.array_equal(state, chain[i - 1]):
-                batch_accept.append(1)
-                if current_seq > max_seq:
-                    max_seq = current_seq
-                current_seq = 1
-            else:
-                batch_accept.append(0)
-                current_seq += 1
+    #    batch_accept = deque(maxlen=batch_length)
+    #    current_seq = 1 # current sequence length
+    #    max_seq = 1 # maximal sequence length
+    #    skip = 1
+    #    for i in range(1, sample_size):
+    #        state = self.next_state(state, i)
+    #        if not np.array_equal(state, chain[i - 1]):
+    #            batch_accept.append(1)
+    #            if current_seq > max_seq:
+    #                max_seq = current_seq
+    #            current_seq = 1
+    #        else:
+    #            batch_accept.append(0)
+    #            current_seq += 1
 
-            chain[i] = state
-            try:
-                try:
-                    tags[state.tag_parser].append(state.tag)
-                    tagged[state.tag_parser].append(i)
-                except KeyError:
-                    tags[state.tag_parser] = []
-                    tagged[state.tag_parser] = []
-            except AttributeError:
-                pass
+    #        chain[i] = state
+    #        try:
+    #            try:
+    #                tags[state.tag_parser].append(state.tag)
+    #                tagged[state.tag_parser].append(i)
+    #            except KeyError:
+    #                tags[state.tag_parser] = []
+    #                tagged[state.tag_parser] = []
+    #        except AttributeError:
+    #            pass
 
-            if i % skip == 0:
-                if i >= batch_length:
-                    accept_rate = sum(batch_accept)/batch_length
-                else:
-                    accept_rate = sum(batch_accept)/i
-                if i == 1:
-                    print("Event 1\t(batch acceptance rate: %f)" % (accept_rate))
-                else:
-                    print("Event %i\t(batch acceptance rate: %f)\tmax sequence length: %i" % (i, accept_rate, max(current_seq, max_seq)))
-                if is_power_of_ten(i):
-                    skip *= 10
+    #        if i % skip == 0:
+    #            if i >= batch_length:
+    #                accept_rate = sum(batch_accept)/batch_length
+    #            else:
+    #                accept_rate = sum(batch_accept)/i
+    #            if i == 1:
+    #                print("Event 1\t(batch acceptance rate: %f)" % (accept_rate))
+    #            else:
+    #                print("Event %i\t(batch acceptance rate: %f)\tmax sequence length: %i" % (i, accept_rate, max(current_seq, max_seq)))
+    #            if is_power_of_ten(i):
+    #                skip *= 10
 
-        if out_mask is not None:
-            chain = chain[:, out_mask]
+    #    if out_mask is not None:
+    #        chain = chain[:, out_mask]
 
-        for parser in tagged:
-            chain[tagged[parser]] = parser(chain[tagged[parser]], tags[parser])
+    #    for parser in tagged:
+    #        chain[tagged[parser]] = parser(chain[tagged[parser]], tags[parser])
 
-        sample = Sample(data=chain, target=self.target_density)
-        return sample
+    #    sample = Sample(data=chain, target=self.target_density)
+    #    return sample
