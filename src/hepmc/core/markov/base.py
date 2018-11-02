@@ -3,6 +3,7 @@ from collections import deque
 from ..sampling import Sample
 from ..util import is_power_of_ten
 from ..density import Density
+from tqdm import tqdm
 
 # MARKOV CHAIN
 class MarkovUpdate(object):
@@ -35,94 +36,136 @@ class MarkovUpdate(object):
         """
         raise NotImplementedError("AbstractMarkovUpdate is abstract.")
 
-    def generator(self, sample_size: int, init_state):
+    def generator(self, sample_size: int, init_state, lag=1):
         """Returns a generator that yields new states sequentially."""
         i = 0
         state = init_state
         while i < sample_size:
-            state = self.next_state(state, i)
+            for j in range(lag):
+                state = self.next_state(state, i)
             yield state
             i += 1
 
-    def sample(self, sample_size: int, initial, out_mask=None, n_batches: int = 20) -> Sample:
-        """Generate a sample of given size.
-
-        Parameters
-        ----------
-        sample_size
-            Number of samples to generate.
-        initial
-            Initial state of the Markov chain. Can be a MarkovState
-            or a numpy array.
-        out_mask
-            Slice object, return only this slice of the output
-            chain (useful if sampler uses artificial variables).
-
-        Returns
-        -------
-        Sample
-            A sample object containing the data.
-        """
-        # initialize sampling
-        state = self.init_state(np.atleast_1d(initial))
-        if len(state) != self.target.ndim:
-            raise ValueError('initial must have dimension ' + str(self.target.ndim))
-        self.init_adapt(state)  # initial adaptation
-
-        batch_length = int(sample_size/n_batches)
-
-        tags = dict()
-        tagged = dict()
-
-        chain = np.empty((sample_size, self.target.ndim))
-        chain[0] = state
-
+    def sample(self, sample_size: int, init_state, burnin: int = 0, batch_length=100, lag=1) -> Sample:
         batch_accept = deque(maxlen=batch_length)
-        current_seq = 1 # current sequence length
-        max_seq = 1 # maximal sequence length
-        skip = 1
-        for i in range(1, sample_size):
-            state = self.next_state(state, i)
-            if not np.array_equal(state, chain[i - 1]):
-                batch_accept.append(1)
-                if current_seq > max_seq:
-                    max_seq = current_seq
-                current_seq = 1
-            else:
-                batch_accept.append(0)
-                current_seq += 1
+        previous = init_state
 
-            chain[i] = state
-            try:
-                try:
-                    tags[state.tag_parser].append(state.tag)
-                    tagged[state.tag_parser].append(i)
-                except KeyError:
-                    tags[state.tag_parser] = []
-                    tagged[state.tag_parser] = []
-            except AttributeError:
-                pass
+        if burnin > 0:
+            with tqdm(total=burnin, desc="Burn-in (lag=1)") as pbar:
+                for i, state in enumerate(self.generator(burnin, init_state)):
+                    if not np.array_equal(state, previous):
+                        batch_accept.append(1)
+                    else:
+                        batch_accept.append(0)
 
-            if i % skip == 0:
-                if i >= batch_length:
+                    if ((i+1) % batch_length) == 0:
+                        accept_rate = sum(batch_accept)/batch_length
+                        pbar.set_postfix({"batch acc. rate" : accept_rate})
+
+                        pbar.update(batch_length)
+
+                    previous = state
+        init_state = state
+
+        data = np.empty((sample_size, self.target.ndim))
+        with tqdm(total=sample_size, desc='Sampling (lag={})'.format(lag)) as pbar:
+            for i, state in enumerate(self.generator(sample_size, init_state, lag)):
+                data[i] = state
+
+                if not np.array_equal(state, previous):
+                    batch_accept.append(1)
+                else:
+                    batch_accept.append(0)
+
+                if ((i+1) % batch_length) == 0:
                     accept_rate = sum(batch_accept)/batch_length
-                else:
-                    accept_rate = sum(batch_accept)/i
-                if i == 1:
-                    print("Event 1\t(batch acceptance rate: %f)" % (accept_rate))
-                else:
-                    print("Event %i\t(batch acceptance rate: %f)\tmax sequence length: %i" % (i, accept_rate, max(current_seq, max_seq)))
-                if is_power_of_ten(i):
-                    skip *= 10
+                    pbar.set_postfix({"batch acc. rate" : accept_rate})
 
-        if out_mask is not None:
-            chain = chain[:, out_mask]
+                    pbar.update(batch_length)
 
-        for parser in tagged:
-            chain[tagged[parser]] = parser(chain[tagged[parser]], tags[parser])
+                previous = state
 
-        sample = Sample(data = chain, target = self.target)
-        return sample
+        return Sample(data=data, target=self.target)
+
+    #def sample(self, sample_size: int, initial, out_mask=None, n_batches: int = 20) -> Sample:
+    #    """Generate a sample of given size.
+
+    #    Parameters
+    #    ----------
+    #    sample_size
+    #        Number of samples to generate.
+    #    initial
+    #        Initial state of the Markov chain. Can be a MarkovState
+    #        or a numpy array.
+    #    out_mask
+    #        Slice object, return only this slice of the output
+    #        chain (useful if sampler uses artificial variables).
+
+    #    Returns
+    #    -------
+    #    Sample
+    #        A sample object containing the data.
+    #    """
+    #    # initialize sampling
+    #    state = self.init_state(np.atleast_1d(initial))
+    #    if len(state) != self.target.ndim:
+    #        raise ValueError('initial must have dimension ' + str(self.target.ndim))
+    #    self.init_adapt(state)  # initial adaptation
+
+    #    batch_length = int(sample_size/n_batches)
+
+    #    tags = dict()
+    #    tagged = dict()
+
+    #    chain = np.empty((sample_size, self.target.ndim))
+    #    chain[0] = state
+
+    #    batch_accept = deque(maxlen=batch_length)
+    #    current_seq = 1 # current sequence length
+    #    max_seq = 1 # maximal sequence length
+    #    skip = 1
+    #    for i in range(1, sample_size):
+    #        state = self.next_state(state, i)
+    #        if not np.array_equal(state, chain[i - 1]):
+    #            batch_accept.append(1)
+    #            if current_seq > max_seq:
+    #                max_seq = current_seq
+    #            current_seq = 1
+    #        else:
+    #            batch_accept.append(0)
+    #            current_seq += 1
+
+    #        chain[i] = state
+    #        try:
+    #            try:
+    #                tags[state.tag_parser].append(state.tag)
+    #                tagged[state.tag_parser].append(i)
+    #            except KeyError:
+    #                tags[state.tag_parser] = []
+    #                tagged[state.tag_parser] = []
+    #        except AttributeError:
+    #            pass
+
+    #        if i % skip == 0:
+    #            if i >= batch_length:
+    #                accept_rate = sum(batch_accept)/batch_length
+    #            else:
+    #                accept_rate = sum(batch_accept)/i
+    #            if i == 1:
+    #                print("Event 1\t(batch acceptance rate: %f)" % (accept_rate))
+    #            else:
+    #                print("Event %i\t(batch acceptance rate: %f)\tmax sequence length: %i" % (i, accept_rate, max(current_seq, max_seq)))
+    #            if is_power_of_ten(i):
+    #                skip *= 10
+
+    #    if out_mask is not None:
+    #        chain = chain[:, out_mask]
+
+    #    for parser in tagged:
+    #        chain[tagged[parser]] = parser(chain[tagged[parser]], tags[parser])
+
+    #    sample = Sample(data = chain, target = self.target)
+    #    return sample
 
 class CompositeMarkovUpdate(MarkovUpdate):
 
