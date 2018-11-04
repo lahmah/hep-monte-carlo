@@ -71,6 +71,7 @@ class MarkovUpdate(object):
 
                     previous = state
         init_state = state
+        n_accepted = 0
 
         data = np.empty((sample_size, self.target.ndim))
         with tqdm(total=sample_size, desc='Sampling (lag={})'.format(lag)) as pbar:
