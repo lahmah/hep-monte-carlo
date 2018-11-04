@@ -71,6 +71,7 @@ class Sample(object):
         self._effective_sample_size = None
         self._variance = None
         self._mean = None
+        self._acceptance_rate = None
 
         self._sample_info = [
             ('size', 'data (size)', '%s'),
@@ -145,6 +146,12 @@ class Sample(object):
         if self._bin_wise_chi2 is None and self.target is not None:
             self._bin_wise_chi2 = bin_wise_chi2(self)
         return self._bin_wise_chi2
+
+    @property
+    def acceptance_rate(self):
+        if self._acceptance_rate is None:
+            self._acceptance_rate = np.unique(self.data, axis=0).shape[0] / self.size
+        return self._acceptance_rate
 
     def plot(self):
         if self.ndim == 1:
