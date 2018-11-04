@@ -50,6 +50,7 @@ class MarkovUpdate(object):
         init_state = self.init_state(init_state)
         self.init_adapt(init_state)  # initial adaptation
         batch_accept = deque(maxlen=batch_length)
+        n_accepted = 0
         previous = init_state
 
         if burnin > 0:
@@ -57,12 +58,14 @@ class MarkovUpdate(object):
                 for i, state in enumerate(self.generator(burnin, init_state)):
                     if not np.array_equal(state, previous):
                         batch_accept.append(1)
+                        n_accepted += 1
                     else:
                         batch_accept.append(0)
 
                     if ((i+1) % batch_length) == 0:
-                        accept_rate = sum(batch_accept)/batch_length
-                        pbar.set_postfix({"batch acc. rate" : accept_rate})
+                        batch_accept_rate = sum(batch_accept)/batch_length
+                        total_accept_rate = n_accepted / (i+1)
+                        pbar.set_postfix({"batch acc. rate" : batch_accept_rate, "total acc. rate" : total_accept_rate})
 
                         pbar.update(batch_length)
 
@@ -76,12 +79,14 @@ class MarkovUpdate(object):
 
                 if not np.array_equal(state, previous):
                     batch_accept.append(1)
+                    n_accepted += 1
                 else:
                     batch_accept.append(0)
 
                 if ((i+1) % batch_length) == 0:
-                    accept_rate = sum(batch_accept)/batch_length
-                    pbar.set_postfix({"batch acc. rate" : accept_rate})
+                    batch_accept_rate = sum(batch_accept)/batch_length
+                    total_accept_rate = n_accepted / (i+1)
+                    pbar.set_postfix({"batch acc. rate" : batch_accept_rate, "total acc. rate" : total_accept_rate})
 
                     pbar.update(batch_length)
 
