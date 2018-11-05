@@ -119,6 +119,7 @@ hepmc_env
 Sherpa_References.tex
 notebooks/Process
 notebooks/Results*
+notebooks/makelibs
 
 # ignore images
 *.pdf

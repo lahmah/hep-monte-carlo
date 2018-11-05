@@ -1,0 +1,37 @@
+(run){
+  % general settings
+  EVENTS 100000;
+  SHERPA_LDADD SherpaMain;
+
+  % model parameters
+  HARD_DECAYS Off;
+  MI_HANDLER None;
+  FRAGMENTATION Off;
+  SHOWER_GENERATOR None;
+  PDF_LIBRARY None;
+  ME_SIGNAL_GENERATOR Amegic;
+  %ME_SIGNAL_GENERATOR Comix;
+
+  SCALES VAR{sqr(E_CMS)};  
+}(run)
+
+(isr){
+  PDF_LIBRARY None;
+}(isr)
+
+(beam){
+  % collider setup
+  
+  BEAM_1  11; BEAM_ENERGY_1 500;
+  BEAM_2 -11; BEAM_ENERGY_2 500;
+  
+}(beam)
+
+(processes){
+  Process 11 -11 -> 6[a] -6[b]
+  Decay -6[b] -> -5 -24[d]
+  Decay -24[d] -> 11 -12
+  Decay 6[a] -> 5 24[c]
+  Decay 24[c] -> -13 14
+  End process;
+}(processes)
