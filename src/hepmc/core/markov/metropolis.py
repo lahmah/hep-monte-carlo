@@ -88,6 +88,7 @@ class MetropolisUpdate(MarkovUpdate):
             next_state = state
 
         if self.is_adaptive:
+            accept = max(1., np.exp(accept))
             self.adapt(iteration, state, next_state, accept)
 
         return next_state
