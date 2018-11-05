@@ -68,6 +68,7 @@ class AdaptiveMetropolisUpdate(DefaultMetropolis):
     
     def adapt(self, t: int, prev, current, accept: float) -> None:
         """Adapt the proposal."""
+        t = t+1
         if not type(current) is np.ndarray:
             current = np.array(current)
         if t == 1:
