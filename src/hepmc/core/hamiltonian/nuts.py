@@ -2,7 +2,7 @@ import numpy as np
 
 from .dual_average import DualAveragingHMC
 from ..markov.metropolis import MetropolisState
-
+from .simulation import HamiltonLeapfrog
 
 class NUTSUpdate(DualAveragingHMC):
     """
@@ -11,7 +11,7 @@ class NUTSUpdate(DualAveragingHMC):
     
     def __init__(self, target_density, p_dist, adapt_schedule,
                  t0=10, step_size_bar0=1, Hbar0=0, gamma=0.05, kappa=0.75,
-                 delta=0.65, Emax=1000):
+                 delta=0.65, Emax=1000, sim_class=HamiltonLeapfrog):
         super().__init__(target_density, p_dist, 1, adapt_schedule,
                          t0, step_size_bar0, Hbar0, gamma, kappa, delta)
         self.Emax = Emax
@@ -21,7 +21,8 @@ class NUTSUpdate(DualAveragingHMC):
     def proposal(self, current):
         p0 = self.p_dist.proposal()
         # u = np.random.uniform()
-        u = np.random.uniform(0, current.pdf / self.p_dist.pdf(p0))
+        #u = np.random.uniform(0, current.pdf / self.p_dist.pdf(p0))
+        u = np.random.uniform(0, np.exp(self.p_dist.pot(p0) - current.pot))
         # print('u_max:', current.pdf / self.p_dist.pdf(p0))
         q_minus, q_plus, p_minus, p_plus, q = current, current, p0, p0, current
         j, n, s = 0, 1, 1
@@ -47,8 +48,15 @@ class NUTSUpdate(DualAveragingHMC):
             s = s_prime * (np.dot(dq, p_minus) >= 0) * (np.dot(dq, p_plus) >= 0)
             j = j + 1
 
-        q_pdf = self.target_density.pdf(q)
-        return MetropolisState(q, pdf=q_pdf)
+        #q_pdf = self.target_density.pdf(q)
+        #return MetropolisState(q, pdf=q_pdf)
+        q_pot = self.target_density.pot(q)
+        return MetropolisState(q, pot=q_pot)
+
+    def next_state(self, state, iteration):
+        next_state = self.proposal(state)
+        self.adapt(iteration, state, next_state, self.alpha/self.n_alpha)
+        return next_state
     
     def build_tree(self, q, p, u, v, j, step_size, q0, p0, Emax):
         if j == 0:
@@ -93,5 +101,5 @@ class NUTSUpdate(DualAveragingHMC):
             return (q_minus, p_minus, q_plus, p_plus, q_prime, n_prime,
                     s_prime, alpha_prime, n_alpha_prime)
         
-    def accept(self, state, candidate):
-        return 1  # accept all
+    #def accept(self, state, candidate):
+    #    return 1  # accept all
