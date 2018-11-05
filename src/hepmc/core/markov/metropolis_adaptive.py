@@ -81,7 +81,7 @@ class AdaptiveMetropolisUpdate(DefaultMetropolis):
                     t*np.outer(self.mean_previous, self.mean_previous) -
                     (t+1)*np.outer(self.mean, self.mean) +
                     np.outer(current, current) +
-                    self.epsilon*np.identity(self.ndim))
+                    self.epsilon*np.identity(self.target.ndim))
         
             if self.adapt_schedule(t) is True:
                 self._proposal.cov = self.cov
