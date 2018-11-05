@@ -1,5 +1,6 @@
 import numpy as np
 from .hmc import HamiltonianUpdate
+from .simulation import HamiltonLeapfrog
 
 
 class DualAveragingHMC(HamiltonianUpdate):
@@ -9,7 +10,7 @@ class DualAveragingHMC(HamiltonianUpdate):
 
     def __init__(self, target_density, p_dist, simulation_length,
                  adapt_schedule, t0=10, stepsize_bar0=1, Hbar0=0, gamma=0.05,
-                 kappa=0.75, delta=0.65):
+                 kappa=0.75, delta=0.65, sim_class=HamiltonLeapfrog):
         # steps and step size are set later
         super().__init__(target_density, p_dist, 1, 1., is_adaptive=True)
         # set later
@@ -45,23 +46,27 @@ class DualAveragingHMC(HamiltonianUpdate):
         return q, p
 
     def find_reasonable_step_size(self, current):
-        step_size = .25 / self.ndim ** (1 / 4)
+        step_size = .25 / self.target.ndim ** (1 / 4)
         # print('current:', current)
         # print('current_pdf:', current.pdf)
         # print('stepsize:', step_size)
         p0 = self.p_dist.proposal()
         # print('p0:', p0)
-        p0_pdf = self.p_dist.pdf(p0)
+        #p0_pdf = self.p_dist.pdf(p0)
+        p0_pot = self.p_dist.pot(p0)
         # print('p0_pdf:', p0_pdf)
 
         q, p = self.simulate_custom(current, p0, 1, step_size)
 
         # print('q:', q)
         # print('p:', p)
-        q_pdf = self.target_density.pdf(q)
+        #q_pdf = self.target_density.pdf(q)
+        q_pot = self.target_density.pot(q)
         try:
-            p_pdf = self.p_dist.pdf(p)
-            aprob = q_pdf * p_pdf / (current.pdf * p0_pdf)
+            #p_pdf = self.p_dist.pdf(p)
+            p_pot = self.p_dist.pot(p)
+            #aprob = q_pdf * p_pdf / (current.pdf * p0_pdf)
+            aprob = np.exp(current.pot-q_pot+p0_pot-p_pot)
         except RuntimeWarning:
             aprob = 0
         # print('q_pdf:', q_pdf)
@@ -96,10 +101,13 @@ class DualAveragingHMC(HamiltonianUpdate):
             step_size = 2. ** a * step_size
             # print('stepsize:', step_size)
             q, p = self.simulate_custom(current, p0, 1, step_size)
-            q_pdf = self.target_density.pdf(q)
+            #q_pdf = self.target_density.pdf(q)
+            q_pot = self.target_density.pot(q)
             try:
-                p_pdf = self.p_dist.pdf(p)
-                aprob = q_pdf * p_pdf / (current.pdf * p0_pdf)
+                #p_pdf = self.p_dist.pdf(p)
+                p_pot = self.p_dist.pot(p)
+                #aprob = q_pdf * p_pdf / (current.pdf * p0_pdf)
+                aprob = np.exp(current.pot-q_pot+p0_pot-p_pot)
             except RuntimeWarning:
                 aprob = 0
             # print('aprob:', aprob)
@@ -120,10 +128,9 @@ class DualAveragingHMC(HamiltonianUpdate):
                         1 - t ** (-self.kappa)) * np.log(self.step_size_bar))
             self.nsteps_min = self.nsteps_max = int(
                 self.simulation_length / self.step_size)
+            #print('aprob:', max(1., np.exp(accept)))
+            #print('stepsize:', self.step_size)
+            #print('nsteps:', self.nsteps_min)
 
         else:
             self.step_size = self.step_size_bar
-
-        # print('aprob:', accept)
-        # print('stepsize:', self.step_size)
-        # print('nsteps:', self.nsteps_min)
